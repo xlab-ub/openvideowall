@@ -2,10 +2,10 @@
 
 import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Group, Video as VideoType } from '@/types';
+import { Button } from '../button';
+import { Label } from '../label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../select';
+import { Group, Video as VideoType } from '../../../types';
 import { VideoAssignment } from './types';
 
 interface StreamingDialogsProps {

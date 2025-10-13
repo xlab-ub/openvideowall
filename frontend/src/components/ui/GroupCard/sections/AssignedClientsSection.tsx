@@ -5,7 +5,7 @@ import { Button } from '../../button';
 import { Badge } from '../../badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../select';
 import { Wifi, MoreVertical, Power, Users } from 'lucide-react';
-import { Group, Client } from '@/types';
+import { Group, Client } from '../../../../types';
 
 interface AssignedClientsSectionProps {
   group: Group;

@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { Button } from '../../button';
 import { Badge } from '../../badge';
 import { Settings, Info, MoreVertical, Copy, VideoIcon } from 'lucide-react';
-import { Group } from '@/types';
+import { Group } from '../../../../types';
 import { VideoAssignment } from '../types';
 
 interface StreamingModeSectionProps {

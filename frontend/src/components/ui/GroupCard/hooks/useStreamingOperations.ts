@@ -1,9 +1,9 @@
 // frontend/src/components/ui/GroupCard/hooks/useStreamingOperations.ts
 
 import { useState } from 'react';
-import { Group } from '@/types';
+import { Group } from '../../../../types';
 import { VideoAssignment } from '../types';
-import { api } from '@/lib/api/api';
+import { api } from '../../../../API/api';
 
 interface UseStreamingOperationsProps {
   group: Group;

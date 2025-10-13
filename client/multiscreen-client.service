@@ -1,0 +1,16 @@
+[Unit]
+Description=Multi-Screen Client Service
+After=network.target graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+User=pi
+Environment=DISPLAY=:0
+WorkingDirectory=/home/pi/multiscreen-client
+ExecStart=/usr/bin/python3 /home/pi/multiscreen-client/client.py --server http://YOUR_SERVER_IP:5000 --hostname CLIENT_HOSTNAME --display-name "DISPLAY_NAME"
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

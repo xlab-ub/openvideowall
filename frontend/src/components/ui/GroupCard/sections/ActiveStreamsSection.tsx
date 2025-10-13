@@ -1,7 +1,7 @@
 // frontend/src/components/ui/GroupCard/sections/ActiveStreamsSection.tsx
 
 import React from 'react';
-import { Group } from '@/types';
+import { Group } from '../../../../types';
 
 interface ActiveStreamsSectionProps {
   group: Group;

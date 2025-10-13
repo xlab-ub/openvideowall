@@ -2,10 +2,9 @@
 
 import React from 'react';
 import { CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Button } from '../button';
 import { AlertCircle } from 'lucide-react';
-import { Group, Client, Video as VideoType } from '@/types';
+import { Group, Client, Video as VideoType } from '../../../types';
 
 // Import sub-components
 import StreamingModeSection from './sections/StreamingModeSection';

@@ -3,7 +3,7 @@
 import React from 'react';
 import { Button } from '../../button';
 import { Users, Wifi } from 'lucide-react';
-import { Group, Client } from '@/types';
+import { Group, Client } from '../../../../types';
 
 interface ClientAssignmentSectionProps {
   group: Group;

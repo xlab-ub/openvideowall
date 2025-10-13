@@ -1,89 +1,15 @@
 #!/usr/bin/env python3
 """
-Enhanced Multi-Screen Client with Automatic Package Management
-Automatically handles local package installation if global packages are restricted
+Unified Multi-Screen Client for Video Wall Systems
+Simple, reliable client for multi-screen video streaming
 """
-
-import sys
-import os
-from pathlib import Path
-
-# Add local lib directory to Python path if it exists
-LOCAL_LIB_DIR = Path(__file__).parent / "lib"
-if LOCAL_LIB_DIR.exists():
-    sys.path.insert(0, str(LOCAL_LIB_DIR))
-
-def install_package_locally(package_name):
-    """Install a package locally in the ./lib directory"""
-    import subprocess
-    
-    print(f" {package_name} package not found, attempting local installation...")
-    
-    # Create local lib directory
-    LOCAL_LIB_DIR.mkdir(exist_ok=True)
-    
-    # Try different installation methods
-    methods = [
-        # Method 1: Standard pip install to target
-        [sys.executable, "-m", "pip", "install", "--target", str(LOCAL_LIB_DIR), package_name],
-        # Method 2: With --break-system-packages
-        [sys.executable, "-m", "pip", "install", "--target", str(LOCAL_LIB_DIR), "--break-system-packages", package_name],
-        # Method 3: User install as fallback
-        [sys.executable, "-m", "pip", "install", "--user", package_name],
-        # Method 4: User install with break system packages
-        [sys.executable, "-m", "pip", "install", "--user", "--break-system-packages", package_name],
-    ]
-    
-    for i, cmd in enumerate(methods):
-        try:
-            print(f"   Trying installation method {i+1}/4...")
-            subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            
-            # Add to path if installed locally
-            if "--target" in cmd:
-                sys.path.insert(0, str(LOCAL_LIB_DIR))
-            
-            print(f" Successfully installed {package_name} (method {i+1})")
-            return True
-            
-        except subprocess.CalledProcessError:
-            continue
-    
-    # All methods failed
-    print(f" Failed to install {package_name} automatically")
-    print(f" Please install manually:")
-    print(f"   sudo apt-get install python3-{package_name}")
-    print(f"   OR: python3 -m pip install --user --break-system-packages {package_name}")
-    return False
-
-def ensure_package(package_name, import_name=None):
-    """Ensure a package is available, install locally if needed"""
-    if import_name is None:
-        import_name = package_name
-    
-    try:
-        __import__(import_name)
-        return True
-    except ImportError:
-        if install_package_locally(package_name):
-            try:
-                __import__(import_name)
-                return True
-            except ImportError:
-                return False
-        return False
-
-# Ensure required packages are available
-if not ensure_package("requests"):
-    print("Cannot continue without the requests package.")
-    sys.exit(1)
-
-# Now we can safely import everything
-import requests
 import argparse
+import requests
 import time
 import logging
 import subprocess
+import sys
+import os
 import json
 import signal
 import atexit
@@ -91,32 +17,66 @@ import threading
 import socket
 from typing import Optional, Dict, Any, Tuple
 from urllib.parse import urlparse
-
-from queue import Queue
+from pathlib import Path
+import tkinter as tk
+from tkinter import messagebox
 
 
 class UnifiedMultiScreenClient:
-    """Enhanced multi-screen client with automatic screen targeting"""
+    """
+    Unified Multi-Screen Client for Video Wall Systems
+    Simple and reliable client for multi-screen video streaming
+    """
     
-    def __init__(self, server_url: str, hostname: str, display_name: str, 
-                 force_ffplay: bool = False):
+    def __init__(self, server_url: str, hostname: str = None, display_name: str = None, 
+                 force_ffplay: bool = False, initial_monitor: int = None, enable_hotkeys: bool = False):
         """
         Initialize the multi-screen client
         
         Args:
-            server_url: Server URL to connect to
-            hostname: Client hostname for identification
-            display_name: Display name for admin interface
-            force_ffplay: Force use of ffplay for all streams
+            server_url: Server URL (e.g., "http://192.168.1.100:5000")
+            hostname: Unique client identifier
+            display_name: Friendly display name
+            force_ffplay: Force use of ffplay instead of smart selection
+            initial_monitor: Monitor index to start on (0-based, None for auto-assignment)
+            enable_hotkeys: Enable hotkey window manager (default: False)
         """
-        # Basic configuration
         self.server_url = server_url.rstrip('/')
-        self.hostname = hostname
-        self.display_name = display_name
+        self.hostname = hostname or socket.gethostname()
+        self.display_name = display_name or f"Display-{self.hostname}"
         self.force_ffplay = force_ffplay
+        self.enable_hotkeys = enable_hotkeys
         
-        # Setup logging
-        self.logger = self._setup_logging()
+        # Window management
+        self.window_manager = None
+        self.monitor_positions = [
+            (0, 0),      # Monitor 1 (left) - HDMI-2
+            (3840, 0),   # Monitor 2 (right) - HDMI-1
+            (7680, 0),   # Monitor 3 (if available)
+            (0, 2160),   # Monitor 4 (bottom-left)
+        ]
+        
+        # Fallback monitoring
+        self.last_correct_position_time = time.time()
+        self.position_check_interval = 60  # Check every 60 seconds
+        self.max_wrong_position_time = 120  # Reposition if wrong for 120 seconds
+        self.fallback_monitor_thread = None
+        self.last_fullscreen_attempt = 0
+        self.fullscreen_cooldown = 30  # Don't try fullscreen more than once every 30 seconds
+        
+        # Configure logging first
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[logging.StreamHandler(sys.stdout)]
+        )
+        self.logger = logging.getLogger(__name__)
+        
+        # Auto-assign monitor if not specified
+        if initial_monitor is None:
+            self.current_monitor = self._auto_assign_monitor()
+        else:
+            self.current_monitor = initial_monitor
         
         # Stream management
         self.current_stream_url = None
@@ -145,27 +105,6 @@ class UnifiedMultiScreenClient:
         
         # Find player executable
         self.player_executable = self._find_player_executable()
-        
-        # Log single-threaded status
-        self.logger.info(f"Single-threaded mode - optimized for efficiency")
-        print(f" SINGLE-THREADED: Enabled (optimized for efficiency)")
-        print(f" AUTO-INSTALL: Python packages installed automatically as needed")
-    
-    def _setup_logging(self) -> logging.Logger:
-        """Setup logging configuration"""
-        log_dir = Path.home() / "client_logs"
-        log_dir.mkdir(exist_ok=True)
-        
-        logger = logging.getLogger(__name__)
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_dir / "client.log"),
-                logging.StreamHandler()
-            ]
-        )
-        return logger
     
     @property
     def client_id(self) -> str:
@@ -246,6 +185,496 @@ class UnifiedMultiScreenClient:
                 # Final fallback: use loopback IP
                 return "127.0.0.1"
     
+    def _detect_available_monitors(self) -> list:
+        """Detect which monitors are actually available"""
+        available_monitors = []
+        
+        try:
+            # Use xrandr to detect available monitors
+            result = subprocess.run(['/usr/bin/xrandr', '--listmonitors'], capture_output=True, text=True)
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')[1:]  # Skip header
+                for line in lines:
+                    if 'HDMI' in line or 'DP' in line or 'eDP' in line:
+                        # Extract monitor info - look for position info
+                        parts = line.split()
+                        for part in parts:
+                            if '/' in part and 'x' in part:
+                                # Found resolution info, this monitor is active
+                                monitor_index = len(available_monitors)
+                                if monitor_index < len(self.monitor_positions):
+                                    available_monitors.append(monitor_index)
+                                break
+        except Exception as e:
+            self.logger.warning(f"Could not detect monitors with xrandr: {e}")
+        
+        # Fallback: assume monitors 0 and 1 are available if detection fails
+        if not available_monitors:
+            available_monitors = [0, 1]
+            self.logger.info("Monitor detection failed, assuming monitors 0 and 1 are available")
+        
+        return available_monitors
+    
+    def _check_monitor_availability(self, monitor_index: int) -> bool:
+        """Check if a specific monitor is available and not in use by another client"""
+        try:
+            # Check if monitor is in available monitors list
+            available_monitors = self._detect_available_monitors()
+            if monitor_index not in available_monitors:
+                self.logger.info(f"Monitor {monitor_index + 1} not in available monitors list")
+                return False
+            
+            # Check if another client is already using this monitor
+            result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
+            if result.returncode == 0:
+                x, y = self.monitor_positions[monitor_index]
+                
+                for line in result.stdout.split('\n'):
+                    if not line.strip():
+                        continue
+                    # Only check windows from OTHER clients (not this one)
+                    if "Multi-Screen Client" in line and "Window Manager" not in line and self.display_name not in line:
+                        # Extract window position from wmctrl -lG output
+                        # Format: WindowID Desktop X Y Width Height Hostname Title
+                        parts = line.split()
+                        if len(parts) >= 6:
+                            try:
+                                window_x = int(parts[2])
+                                window_y = int(parts[3])
+                                # Check if window is positioned on this monitor
+                                if abs(window_x - x) < 200 and abs(window_y - y) < 200:
+                                    self.logger.info(f"Monitor {monitor_index + 1} is already in use by another client at ({window_x}, {window_y})")
+                                    return False
+                            except (ValueError, IndexError):
+                                continue
+            
+            self.logger.info(f"Monitor {monitor_index + 1} is available")
+            return True
+            
+        except Exception as e:
+            self.logger.warning(f"Could not check monitor availability: {e}")
+            return True  # Assume available if check fails
+    
+    def _auto_assign_monitor(self) -> int:
+        """Automatically assign a monitor based on hostname and availability"""
+        # Try to assign monitor based on hostname pattern
+        hostname_lower = self.hostname.lower()
+        
+        # Check for common patterns in hostname
+        if '1' in hostname_lower or 'left' in hostname_lower or 'monitor1' in hostname_lower:
+            preferred_monitor = 0  # Monitor 1
+        elif '2' in hostname_lower or 'right' in hostname_lower or 'monitor2' in hostname_lower:
+            preferred_monitor = 1  # Monitor 2
+        else:
+            # Default to monitor 1 if no pattern matches
+            preferred_monitor = 0
+        
+        # Check if preferred monitor is available
+        if self._check_monitor_availability(preferred_monitor):
+            self.logger.info(f"Auto-assigned to Monitor {preferred_monitor + 1} based on hostname pattern")
+            return preferred_monitor
+        
+        # Try the other monitor (1 or 2)
+        alternative_monitor = 1 if preferred_monitor == 0 else 0
+        if self._check_monitor_availability(alternative_monitor):
+            self.logger.info(f"Preferred monitor {preferred_monitor + 1} in use, assigned to Monitor {alternative_monitor + 1}")
+            return alternative_monitor
+        
+        # If both monitors 1 and 2 are busy, try monitor 3
+        if self._check_monitor_availability(2):
+            self.logger.warning(f"Monitors 1 and 2 are busy, assigned to Monitor 3")
+            return 2
+        
+        # Last resort: use monitor 1 anyway (will overlap but at least works)
+        self.logger.warning(f"All monitors appear busy, using Monitor 1 (may overlap)")
+        return 0
+    
+    def create_window_manager(self):
+        """Create a hidden window manager for hotkey handling"""
+        try:
+            self.window_manager = tk.Tk()
+            self.window_manager.withdraw()  # Hide the window
+            self.window_manager.title("Multi-Screen Client Window Manager")
+            
+            # Bind hotkeys
+            self.window_manager.bind('<Control-m>', self.move_to_next_monitor)
+            self.window_manager.bind('<Control-Left>', self.move_to_previous_monitor)
+            self.window_manager.bind('<Control-Right>', self.move_to_next_monitor)
+            self.window_manager.bind('<Control-1>', lambda e: self.move_to_monitor(0))
+            self.window_manager.bind('<Control-2>', lambda e: self.move_to_monitor(1))
+            self.window_manager.bind('<Control-3>', lambda e: self.move_to_monitor(2))
+            self.window_manager.bind('<Control-4>', lambda e: self.move_to_monitor(3))
+            self.window_manager.bind('<Control-h>', self.show_help)
+            
+            # Keep window hidden and not focusable
+            self.window_manager.attributes('-topmost', False)
+            # Don't force focus to keep it hidden
+            
+            print(f"Window Manager Started")
+            print(f"   Hotkeys:")
+            print(f"     Ctrl+M or Ctrl+Right: Move to next monitor")
+            print(f"     Ctrl+Left: Move to previous monitor")
+            print(f"     Ctrl+1-4: Move to specific monitor")
+            print(f"     Ctrl+H: Show help")
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to create window manager: {e}")
+            return False
+    
+    def move_to_monitor(self, monitor_index: int):
+        """Move the fullscreen window to a specific monitor"""
+        if not self.player_process or self.player_process.poll() is not None:
+            return
+        
+        if monitor_index >= len(self.monitor_positions):
+            print(f"Monitor {monitor_index + 1} not available")
+            return
+        
+        x, y = self.monitor_positions[monitor_index]
+        self.current_monitor = monitor_index
+        
+        try:
+            # Use wmctrl to move the window (works with Wayland/XWayland)
+            window_title = f"Multi-Screen Client - {self.display_name}"
+            
+            # Find the window by title, prioritizing video windows
+            result = subprocess.run(['wmctrl', '-l'], capture_output=True, text=True)
+            if result.returncode == 0:
+                # Look for windows, prioritizing video windows over manager windows
+                video_windows = []
+                manager_windows = []
+                
+                for line in result.stdout.split('\n'):
+                    if not line.strip():
+                        continue
+                        
+                    # Skip the Window Manager window
+                    if "Window Manager" in line:
+                        manager_windows.append(line)
+                        continue
+                        
+                    # Check if this matches our window title
+                    if window_title in line:
+                        video_windows.append(line)
+                
+                # Try to move video windows first
+                for line in video_windows:
+                    window_id = line.split()[0]
+                    subprocess.run(['wmctrl', '-ir', window_id, '-e', f'0,{x},{y},-1,-1'])
+                    print(f"Moved video window to Monitor {monitor_index + 1} (x={x}, y={y})")
+                    return
+                
+                # If no video windows found, try manager windows as fallback
+                if not video_windows and manager_windows:
+                    for line in manager_windows:
+                        window_id = line.split()[0]
+                        subprocess.run(['wmctrl', '-ir', window_id, '-e', f'0,{x},{y},-1,-1'])
+                        print(f"Moved manager window to Monitor {monitor_index + 1} (x={x}, y={y})")
+                        return
+            
+            # Fallback: try xdotool if wmctrl doesn't work
+            subprocess.run(['xdotool', 'search', '--name', window_title, 'windowmove', str(x), str(y)])
+            print(f"Moved to Monitor {monitor_index + 1} (x={x}, y={y})")
+            
+        except FileNotFoundError:
+            print(f"Window management tools not found. Install with:")
+            print(f"   sudo apt install wmctrl xdotool")
+        except Exception as e:
+            self.logger.error(f"Failed to move window: {e}")
+    
+    def move_to_next_monitor(self, event=None):
+        """Move to the next monitor"""
+        next_monitor = (self.current_monitor + 1) % len(self.monitor_positions)
+        self.move_to_monitor(next_monitor)
+    
+    def move_to_previous_monitor(self, event=None):
+        """Move to the previous monitor"""
+        prev_monitor = (self.current_monitor - 1) % len(self.monitor_positions)
+        self.move_to_monitor(prev_monitor)
+    
+    def _position_window_on_monitor(self):
+        """Position the video window on the correct monitor after it starts"""
+        if not self.player_process or self.player_process.poll() is not None:
+            print(f"   Skipping window positioning - player not running")
+            return
+        
+        try:
+            x, y = self.monitor_positions[self.current_monitor]
+            print(f"   🎯 Positioning window on Monitor {self.current_monitor + 1} (x={x}, y={y})")
+            
+            # Simple approach: try to move any Multi-Screen Client window
+            for attempt in range(10):
+                time.sleep(2)
+                
+                print(f"   🔄 Attempt {attempt + 1}/10: Looking for windows...")
+                
+                # Get list of windows
+                result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
+                if result.returncode != 0:
+                    print(f"   ❌ Could not list windows: {result.stderr}")
+                    continue
+                
+                # Find THIS client's windows only (by display name)
+                windows_found = []
+                for line in result.stdout.split('\n'):
+                    if not line.strip():
+                        continue
+                    # Only match windows that contain this client's display name
+                    if "Multi-Screen Client" in line and "Window Manager" not in line and self.display_name in line:
+                        parts = line.split()
+                        if len(parts) >= 6:
+                            windows_found.append({
+                                'id': parts[0],
+                                'x': int(parts[2]),
+                                'y': int(parts[3]),
+                                'line': line
+                            })
+                
+                if not windows_found:
+                    print(f"   No Multi-Screen Client windows found yet...")
+                    continue
+                
+                # Try to move each window
+                for window in windows_found:
+                    print(f"   Found window: {window['line']}")
+                    print(f"   Current position: ({window['x']}, {window['y']})")
+                    
+                    # Check if already in correct position
+                    if abs(window['x'] - x) < 100 and abs(window['y'] - y) < 100:
+                        print(f"   ✅ Window already in correct position!")
+                        # Force fullscreen mode using safe method
+                        self._safe_force_fullscreen("already positioned")
+                        return
+                    
+                    # Move window
+                    print(f"   Moving window {window['id']} to ({x}, {y})")
+                    move_result = subprocess.run([
+                        'wmctrl', '-ir', window['id'], '-e', f'0,{x},{y},-1,-1'
+                    ], capture_output=True, text=True)
+                    
+                    if move_result.returncode == 0:
+                        print(f"   ✅ Window moved successfully!")
+                        
+                        # Verify position
+                        time.sleep(1)
+                        verify_result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
+                        if verify_result.returncode == 0:
+                            for verify_line in verify_result.stdout.split('\n'):
+                                if window['id'] in verify_line:
+                                    verify_parts = verify_line.split()
+                                    if len(verify_parts) >= 6:
+                                        verify_x = int(verify_parts[2])
+                                        verify_y = int(verify_parts[3])
+                                        print(f"   New position: ({verify_x}, {verify_y})")
+                                        if abs(verify_x - x) < 100 and abs(verify_y - y) < 100:
+                                            print(f"   ✅ Successfully positioned on Monitor {self.current_monitor + 1}!")
+                                            # Force fullscreen mode using safe method
+                                            self._safe_force_fullscreen("successfully positioned")
+                                            return
+                                        else:
+                                            print(f"   ⚠️  Position not correct: expected ({x}, {y}), got ({verify_x}, {verify_y})")
+                        return
+                    else:
+                        print(f"   ❌ Failed to move window: {move_result.stderr}")
+            
+            print(f"   ❌ Could not position window after 10 attempts")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to position window: {e}")
+    
+    def _start_window_positioning_monitor(self):
+        """Start a background thread to continuously monitor and reposition windows"""
+        def positioning_monitor():
+            # Wait 10 seconds before starting continuous monitoring
+            # This gives the initial positioning attempts time to work
+            if self._shutdown_event.wait(timeout=10):
+                return
+                
+            while self.running and not self._shutdown_event.is_set():
+                try:
+                    # Check every 15 seconds if window is still on correct monitor
+                    if self._shutdown_event.wait(timeout=15):
+                        break
+                    
+                    if self.player_process and self.player_process.poll() is None:
+                        self._ensure_window_position()
+                        
+                except Exception as e:
+                    self.logger.debug(f"Window positioning monitor error: {e}")
+        
+        positioning_thread = threading.Thread(target=positioning_monitor, daemon=True)
+        positioning_thread.start()
+    
+    def _ensure_window_position(self):
+        """Ensure the window is still positioned on the correct monitor"""
+        try:
+            x, y = self.monitor_positions[self.current_monitor]
+            window_title = f"Multi-Screen Client - {self.display_name}"
+            
+            # Check if THIS client's window is on correct monitor
+            result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
+            if result.returncode == 0:
+                for line in result.stdout.split('\n'):
+                    if not line.strip():
+                        continue
+                    # Only check THIS client's windows
+                    if "Multi-Screen Client" in line and "Window Manager" not in line and self.display_name in line:
+                        parts = line.split()
+                        if len(parts) >= 6:
+                            try:
+                                window_x = int(parts[2])
+                                window_y = int(parts[3])
+                                # Check if window is positioned on correct monitor
+                                # Use a larger tolerance to avoid constant repositioning
+                                if abs(window_x - x) > 200 or abs(window_y - y) > 200:
+                                    # Window is not on correct monitor, reposition it
+                                    window_id = parts[0]
+                                    print(f"   🔄 Repositioning window from ({window_x}, {window_y}) to ({x}, {y})")
+                                    move_result = subprocess.run([
+                                        'wmctrl', '-ir', window_id, '-e', f'0,{x},{y},-1,-1'
+                                    ], capture_output=True, text=True)
+                                    
+                                    if move_result.returncode == 0:
+                                        self.logger.info(f"Repositioned window to Monitor {self.current_monitor + 1}")
+                                    else:
+                                        self.logger.debug(f"Failed to reposition window: {move_result.stderr}")
+                                    break
+                                else:
+                                    # Window is in correct position, no need to move
+                                    self.logger.debug(f"Window already positioned correctly at ({window_x}, {window_y})")
+                                    # Ensure fullscreen mode is active using safe method
+                                    self._safe_force_fullscreen("continuous monitoring")
+                            except (ValueError, IndexError):
+                                continue
+                                
+        except Exception as e:
+            self.logger.debug(f"Window position check failed: {e}")
+    
+    def _start_fallback_monitor(self):
+        """Start the fallback monitoring thread"""
+        if self.fallback_monitor_thread and self.fallback_monitor_thread.is_alive():
+            return
+            
+        def fallback_monitor():
+            """Continuously monitor window position and reposition if needed"""
+            while self.running and not self._shutdown_event.is_set():
+                try:
+                    time.sleep(self.position_check_interval)
+                    
+                    if not self.player_process or self.player_process.poll() is not None:
+                        continue
+                    
+                    # Check if window is in correct position
+                    if self._is_window_in_correct_position():
+                        self.last_correct_position_time = time.time()
+                        self.logger.debug("Window position check: ✅ Correct position")
+                    else:
+                        wrong_position_time = time.time() - self.last_correct_position_time
+                        self.logger.warning(f"Window position check: ❌ Wrong position for {wrong_position_time:.1f}s")
+                        
+                        if wrong_position_time >= self.max_wrong_position_time:
+                            self.logger.warning(f"🔄 FALLBACK: Repositioning window after {wrong_position_time:.1f}s in wrong position")
+                            self._emergency_reposition()
+                            self.last_correct_position_time = time.time()
+                            
+                except Exception as e:
+                    self.logger.error(f"Fallback monitor error: {e}")
+                    time.sleep(10)  # Wait longer on error
+        
+        self.fallback_monitor_thread = threading.Thread(target=fallback_monitor, daemon=True)
+        self.fallback_monitor_thread.start()
+        self.logger.info("Fallback monitor started (checks every 60s, repositions after 120s)")
+    
+    def _is_window_in_correct_position(self):
+        """Check if the window is in the correct position"""
+        try:
+            x, y = self.monitor_positions[self.current_monitor]
+            
+            # Get list of windows
+            result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True, env={'DISPLAY': ':0'})
+            if result.returncode != 0:
+                return False
+            
+            # Find this client's window
+            for line in result.stdout.split('\n'):
+                if not line.strip():
+                    continue
+                if "Multi-Screen Client" in line and "Window Manager" not in line and self.display_name in line:
+                    parts = line.split()
+                    if len(parts) >= 6:
+                        window_x = int(parts[2])
+                        window_y = int(parts[3])
+                        
+                        # Check if position is correct (with tolerance)
+                        if abs(window_x - x) <= 200 and abs(window_y - y) <= 200:
+                            return True
+            return False
+            
+        except Exception as e:
+            self.logger.debug(f"Position check failed: {e}")
+            return False
+    
+    def _safe_force_fullscreen(self, reason="positioning"):
+        """Safely force fullscreen with cooldown to prevent interference"""
+        current_time = time.time()
+        if current_time - self.last_fullscreen_attempt < self.fullscreen_cooldown:
+            self.logger.debug(f"Skipping fullscreen attempt (cooldown): {reason}")
+            return False
+            
+        try:
+            # Method 1: Try wmctrl fullscreen
+            result1 = subprocess.run(['wmctrl', '-r', f'Multi-Screen Client - {self.display_name}', '-b', 'add,fullscreen'], 
+                                   check=False, capture_output=True, env={'DISPLAY': ':0'})
+            
+            # Method 2: Try xdotool F11
+            result2 = subprocess.run(['xdotool', 'search', '--name', f'Multi-Screen Client - {self.display_name}', 'windowactivate', '--sync', 'key', 'F11'], 
+                                   check=False, capture_output=True, env={'DISPLAY': ':0'})
+            
+            # Method 3: Try to maximize and then fullscreen
+            subprocess.run(['wmctrl', '-r', f'Multi-Screen Client - {self.display_name}', '-b', 'add,maximized_vert,maximized_horz'], 
+                         check=False, capture_output=True, env={'DISPLAY': ':0'})
+            
+            self.last_fullscreen_attempt = current_time
+            self.logger.info(f"✅ Forced fullscreen mode (multiple methods) - {reason}")
+            return True
+        except Exception as e:
+            self.logger.warning(f"⚠️  Could not force fullscreen ({reason}): {e}")
+            return False
+
+    def _emergency_reposition(self):
+        """Emergency repositioning when window is in wrong position for too long"""
+        try:
+            self.logger.warning("🚨 EMERGENCY REPOSITION: Forcing window to correct monitor")
+            
+            # Force reposition using the existing method
+            self._position_window_on_monitor()
+            
+            # Also try to force fullscreen using safe method
+            self._safe_force_fullscreen("emergency reposition")
+                
+        except Exception as e:
+            self.logger.error(f"Emergency reposition failed: {e}")
+    
+    def show_help(self, event=None):
+        """Show hotkey help"""
+        help_text = """
+Multi-Screen Client Hotkeys:
+
+Ctrl+M or Ctrl+Right: Move to next monitor
+Ctrl+Left: Move to previous monitor
+Ctrl+1: Move to Monitor 1 (left)
+Ctrl+2: Move to Monitor 2 (right)
+Ctrl+3: Move to Monitor 3 (if available)
+Ctrl+4: Move to Monitor 4 (bottom-left)
+Ctrl+H: Show this help
+
+Note: Make sure the client window has focus for hotkeys to work.
+        """
+        messagebox.showinfo("Multi-Screen Client Help", help_text)
+    
+
+    
     def detect_sei_in_stream(self, stream_url: str, timeout: int = 10) -> bool:
         """
         Detect if the stream contains SEI metadata by analyzing the first few seconds
@@ -321,7 +750,7 @@ class UnifiedMultiScreenClient:
         """Choose the optimal player based on stream characteristics"""
         # If forced to use ffplay, don't bother detecting
         if self.force_ffplay:
-            return "ffplay", "Forced ffplay mode (--force-ffplay specified)"
+            return "ffplay", "Forced ffplay mode (--force-ffplay)"
         
         # If C++ player not available, use ffplay
         if not self.player_executable or not os.path.exists(self.player_executable):
@@ -338,25 +767,43 @@ class UnifiedMultiScreenClient:
     def register(self) -> bool:
         """Register client with server"""
         try:
-            print(f"\n STARTING MULTI-SCREEN CLIENT REGISTRATION")
-            print(f"   Hostname: {self.hostname}")
+            print(f"\n{'='*80}")
+            print(f" STARTING MULTI-SCREEN CLIENT REGISTRATION")
+            print(f"   Client: {self.hostname}")
+            print(f"   Local IP: {self._get_local_ip_address()}")
+            print(f"   Client ID: {self.client_id}")
             print(f"   Display Name: {self.display_name}")
             print(f"   Server: {self.server_url}")
-            print(f"   Client ID: {self.client_id}")
+            print(f"   Server IP: {self.server_ip}")
+            print(f"   Smart Player: {'Enabled' if not self.force_ffplay else 'Disabled (force ffplay)'}")
             
-            # Choose optimal player
-            player_type, reason = self.choose_optimal_player("dummy_url")
-            print(f"   Optimal Player: {player_type} ({reason})")
+            registration_start = time.time()
+            registration_start_formatted = time.strftime("%Y-%m-%d %H:%M:%S.%f", time.gmtime(registration_start))[:-3]
+            print(f"   Start Time: {registration_start_formatted} UTC")
+            print(f"{'='*80}")
             
-            # Registration data
+            # Create platform string indicating player capability
+            if self.force_ffplay:
+                player_type = "ffplay_only"
+            elif not self.player_executable:
+                player_type = "ffplay_fb"  # fallback
+            else:
+                player_type = "smart_sel"  # smart selection
+            
+            # Get local IP address for unique client identification
+            local_ip = self._get_local_ip_address()
+            
             registration_data = {
-                "client_id": self.client_id,
                 "hostname": self.hostname,
+                "ip_address": local_ip,  # Include IP address for unique client ID
                 "display_name": self.display_name,
                 "platform": f"multiscreen_{player_type}"  # Indicate multi-screen capability
             }
             
-            # Try new endpoint first
+            print(f"\n Sending registration request...")
+            request_sent_time = time.time()
+            
+            # Try new registration endpoint first, fallback to legacy
             try:
                 print(f" Trying new endpoint: {self.server_url}/api/clients/register")
                 print(f" Registration data: {json.dumps(registration_data, indent=2)}")
@@ -403,18 +850,22 @@ class UnifiedMultiScreenClient:
                 endpoint_used = "legacy (/register_client)"
             
             response_received_time = time.time()
+            network_delay_ms = (response_received_time - request_sent_time) * 1000
             
-            print(f" Response received using {endpoint_used}")
+            print(f" Response received in {network_delay_ms:.1f}ms using {endpoint_used}")
             
             if response.status_code in [200, 202]:
                 result = response.json()
                 if result.get("success", True):  # Legacy endpoint doesn't have 'success' field
+                    registration_end = time.time()
+                    total_time_ms = (registration_end - registration_start) * 1000
                     
                     print(f"\n REGISTRATION SUCCESSFUL!")
                     print(f"   Client ID: {result.get('client_id', self.client_id)}")
                     print(f"   Status: {result.get('status', 'registered')}")
                     if 'server_time' in result:
                         print(f"   Server Time: {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(result['server_time']))}")
+                    print(f"   Total Registration Time: {total_time_ms:.1f}ms")
                     
                     self.registered = True
                     self.assignment_status = result.get('status', 'waiting_for_assignment')
@@ -544,19 +995,19 @@ class UnifiedMultiScreenClient:
                     return False
                 
                 else:
-                    print(f" Unexpected status: {status} - {message}")
+                    print(f"  Unexpected status: {status} - {message}")
                     retry_count += 1
                 
                 # Interruptible sleep
                 if self._shutdown_event.wait(timeout=self.retry_interval):
-                    print(f" Shutdown requested during wait")
+                    print(f"   Shutdown requested during wait")
                     return False
                 
             except Exception as e:
-                print(f" Network error ({retry_count + 1}/{self.max_retries}): {e}")
+                print(f"  Network error ({retry_count + 1}/{self.max_retries}): {e}")
                 retry_count += 1
                 if self._shutdown_event.wait(timeout=self.retry_interval * 2):
-                    print(f" Shutdown requested during error wait")
+                    print(f"   Shutdown requested during error wait")
                     return False
         
         if retry_count >= self.max_retries:
@@ -605,7 +1056,7 @@ class UnifiedMultiScreenClient:
             return stream_url
     
     def play_stream(self) -> bool:
-        """Start playing the assigned stream with single-threaded player selection"""
+        """Start playing the assigned stream with optimal player selection"""
         if not self.current_stream_url:
             self.logger.error("No stream URL available")
             return False
@@ -613,27 +1064,20 @@ class UnifiedMultiScreenClient:
         try:
             self.stop_stream()  # Clean up any existing player
             
-            # Single-threaded mode (optimized for Raspberry Pi)
-            print(f"\n SINGLE-THREADED VIDEO PLAYER")
-            print(f"   Mode: Main thread playback (optimized for efficiency)")
-            print(f"   Stream URL: {self.current_stream_url}")
-            
             # Choose the optimal player for this stream
             player_type, reason = self.choose_optimal_player(self.current_stream_url)
             self.current_player_type = player_type
             
+            print(f"\n SMART PLAYER SELECTION")
             print(f"   Selected: {player_type.upper()}")
             print(f"   Reason: {reason}")
+            print(f"   Stream URL: {self.current_stream_url}")
             
             if player_type == "cpp_player":
-                result = self._play_with_cpp_player()
+                return self._play_with_cpp_player()
             else:
-                result = self._play_with_ffplay()
-            
-            # Window positioning is now handled by ffplay command line arguments
-            
-            return result
-                
+                return self._play_with_ffplay()
+                    
         except Exception as e:
             self.logger.error(f"Player error: {e}")
             return False
@@ -666,23 +1110,39 @@ class UnifiedMultiScreenClient:
                         if line.strip():
                             line_clean = line.strip()
                             if "SEI" in line_clean or "timestamp" in line_clean.lower():
-                                self.logger.info(f"SEI: {line_clean}")
+                                self.logger.info(f" SEI: {line_clean}")
                             elif "TELEMETRY:" in line_clean:
-                                self.logger.info(f"{line_clean}")
+                                self.logger.info(f" {line_clean}")
                             elif "ERROR" in line_clean.upper():
-                                self.logger.error(f"{line_clean}")
+                                self.logger.error(f" {line_clean}")
                             elif "WARNING" in line_clean.upper():
-                                self.logger.warning(f"{line_clean}")
+                                self.logger.warning(f" {line_clean}")
                             else:
-                                self.logger.debug(f"{line_clean}")
+                                self.logger.debug(f" {line_clean}")
                 except Exception as e:
                     self.logger.error(f"Error monitoring C++ output: {e}")
+                finally:
+                    if self.player_process and self.player_process.stdout:
+                        self.player_process.stdout.close()
             
-            # Start output monitoring in separate thread
             output_thread = threading.Thread(target=monitor_cpp_output, daemon=True)
             output_thread.start()
             
-            print(f" C++ player started successfully (PID: {self.player_process.pid})")
+            print(f"   Player PID: {self.player_process.pid}")
+            print(f"   Status: Playing with SEI processing")
+            self.logger.info(f"C++ Player started for SEI stream")
+            
+            # Position window on the correct monitor after a delay (multiple attempts)
+            threading.Timer(2.0, self._position_window_on_monitor).start()   # First attempt
+            threading.Timer(5.0, self._position_window_on_monitor).start()   # Second attempt
+            threading.Timer(10.0, self._position_window_on_monitor).start()  # Third attempt
+            
+            # Start fallback monitoring after initial positioning
+            threading.Timer(15.0, self._start_fallback_monitor).start()
+            
+            # Continuous window positioning monitor disabled to prevent repositioning
+            # self._start_window_positioning_monitor()
+            
             return True
             
         except Exception as e:
@@ -697,82 +1157,59 @@ class UnifiedMultiScreenClient:
             print(f"   Stream Version: {self.current_stream_version}")
             print(f"   Capability: Standard video playback")
             
-            # Set up environment with proper display
-            env = os.environ.copy()
-            env['DISPLAY'] = ':0.0'  # Ensure proper display is set
-            
-            # Build ffplay command with basic fullscreen
             cmd = [
                 "ffplay",
                 "-fflags", "nobuffer",
                 "-flags", "low_delay", 
                 "-framedrop",
                 "-strict", "experimental",
-                "-err_detect", "ignore_err",
-                "-ec", "favor_inter",
-                "-sync", "video",
                 "-window_title", f"Multi-Screen Client - {self.display_name}",
-                "-fs",  # Always fullscreen
+                # Removed -fs flag - we'll handle fullscreen with window management
                 "-autoexit",
-                "-loglevel", "warning"
+                "-loglevel", "warning",  # Reduce ffplay verbosity
+                self.current_stream_url
             ]
-            
-            print(f"   Using basic fullscreen playback")
-            
-            # SRT streams work fine without special options
-            if self.current_stream_url.startswith("srt://"):
-                print(f"   SRT stream detected")
-            
-            # Add stream URL
-            cmd.append(self.current_stream_url)
-            
-            print(f"   Command: {' '.join(cmd[:10])}...")  # Show first 10 args
             
             self.player_process = subprocess.Popen(
                 cmd, 
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.PIPE,
-                universal_newlines=True,
-                env=env
+                universal_newlines=True
             )
             
-            # Give ffplay a moment to start and check if it's still running
-            time.sleep(0.5)
-            if self.player_process.poll() is not None:
-                # Process exited immediately - get error output
-                stdout, stderr = self.player_process.communicate()
-                print(f" ffplay exited immediately with code: {self.player_process.returncode}")
-                if stderr:
-                    print(f"   Error: {stderr.strip()}")
-                return False
-            
-            # Monitor ffplay output
+            # Monitor ffplay output (less verbose than C++ player)
             def monitor_ffplay_output():
                 try:
                     for line in iter(self.player_process.stderr.readline, ''):
                         if line.strip():
                             line_clean = line.strip()
-                            # Show connection and SRT-related messages
-                            if any(keyword in line_clean.lower() for keyword in ['srt', 'connection', 'connect', 'timeout', 'failed', 'error', 'reconnect']):
-                                print(f" {line_clean}")
-                                self.logger.info(f"FFplay: {line_clean}")
-                            # Skip configuration spam
-                            elif "configuration:" in line_clean:
-                                continue
-                            elif "decode_slice_header error" in line_clean:
-                                continue
-                            elif "avutil" in line_clean or "avcodec" in line_clean or "avformat" in line_clean:
-                                continue  # Skip more configuration spam
+                            if "error" in line_clean.lower():
+                                self.logger.error(f" {line_clean}")
+                            elif "warning" in line_clean.lower():
+                                self.logger.warning(f" {line_clean}")
                             else:
-                                self.logger.debug(f"FFplay: {line_clean}")
+                                self.logger.debug(f" {line_clean}")
                 except Exception as e:
                     self.logger.debug(f"Error monitoring ffplay output: {e}")
             
-            # Start output monitoring in separate thread
             output_thread = threading.Thread(target=monitor_ffplay_output, daemon=True)
             output_thread.start()
             
-            print(f" ffplay started successfully (PID: {self.player_process.pid})")
+            print(f"   Player PID: {self.player_process.pid}")
+            print(f"   Status: Playing standard stream")
+            self.logger.info(f"ffplay started for standard stream")
+            
+            # Position window on the correct monitor after a delay (multiple attempts)
+            threading.Timer(2.0, self._position_window_on_monitor).start()   # First attempt
+            threading.Timer(5.0, self._position_window_on_monitor).start()   # Second attempt
+            threading.Timer(10.0, self._position_window_on_monitor).start()  # Third attempt
+            
+            # Start fallback monitoring after initial positioning
+            threading.Timer(15.0, self._start_fallback_monitor).start()
+            
+            # Continuous window positioning monitor disabled to prevent repositioning
+            # self._start_window_positioning_monitor()
+            
             return True
             
         except Exception as e:
@@ -793,27 +1230,23 @@ class UnifiedMultiScreenClient:
         print(f"   Player Type: {self.current_player_type}")
         
         last_stream_check = time.time()
-        stream_check_interval = 30  # Increased from 10 to 30 seconds
+        stream_check_interval = 10
         last_health_report = time.time()
         health_report_interval = 30
         
-        while self.running and not self._shutdown_event.is_set():
+        while self.running and not self._shutdown_event.is_set() and self.player_process.poll() is None:
             current_time = time.time()
             
-            # Check if player process is still running
-            if self.player_process is None:
-                print(f" Player process is None - exiting monitoring")
-                return 'error'
-            
-            # Check if process has exited
-            poll_result = self.player_process.poll()
-            if poll_result is not None:
-                print(f" Player process exited with code: {poll_result}")
-                break
+            # Handle window manager events
+            if self.window_manager:
+                try:
+                    self.window_manager.update()
+                except tk.TclError:
+                    # Window manager closed
+                    break
             
             # Check for stream changes
             if current_time - last_stream_check >= stream_check_interval:
-                self.logger.debug(f"Performing periodic stream check...")
                 if self._check_for_stream_change():
                     print(f" Stream change detected, will restart with optimal player...")
                     self.stop_stream()
@@ -842,7 +1275,7 @@ class UnifiedMultiScreenClient:
             print(f" {player_display_name} ended normally")
             return 'stream_ended'
         elif exit_code == 1:
-            print(f" {player_display_name} connection lost or stream unavailable")
+            print(f"  {player_display_name} connection lost or stream unavailable")
             return 'connection_lost'
         else:
             print(f" {player_display_name} exited with error code: {exit_code}")
@@ -874,34 +1307,26 @@ class UnifiedMultiScreenClient:
                     new_stream_url = self.fix_stream_url(data.get('stream_url'))
                     new_stream_version = data.get('stream_version')
                     
-                    # Check for meaningful changes - only restart if URL actually changed
+                    # Check for meaningful changes
                     url_changed = (new_stream_url and 
                                 self.current_stream_url and 
                                 new_stream_url != self.current_stream_url)
                     
-                    # Only check version if we have both versions and they're different
                     version_changed = False
-                    if (new_stream_version is not None and 
-                        self.current_stream_version is not None and
-                        new_stream_version != self.current_stream_version):
-                        version_changed = True
+                    if new_stream_version is not None and self.current_stream_version is not None:
+                        version_changed = (new_stream_version != self.current_stream_version)
                     
-                    if url_changed:
-                        self.logger.info(f"Stream URL change detected:")
-                        self.logger.info(f"  URL: {self.current_stream_url}  {new_stream_url}")
+                    if url_changed or version_changed:
+                        self.logger.info(f"Stream change detected:")
+                        if url_changed:
+                            self.logger.info(f"  URL: {self.current_stream_url}  {new_stream_url}")
+                        if version_changed:
+                            self.logger.info(f"  Version: {self.current_stream_version}  {new_stream_version}")
+                        
                         self.current_stream_url = new_stream_url
                         if new_stream_version is not None:
                             self.current_stream_version = new_stream_version
                         return True
-                    elif version_changed:
-                        self.logger.info(f"Stream version change detected:")
-                        self.logger.info(f"  Version: {self.current_stream_version}  {new_stream_version}")
-                        self.current_stream_version = new_stream_version
-                        return True
-                    else:
-                        # No meaningful change - stream is still the same
-                        self.logger.debug(f"Stream check: no changes detected")
-                        return False
                     
                 elif status in ["waiting_for_streaming", "group_not_running", "not_registered"]:
                     # These statuses indicate the stream has stopped
@@ -935,7 +1360,6 @@ class UnifiedMultiScreenClient:
     
     def stop_stream(self):
         """Stop the player with comprehensive cleanup"""
-        # Stop single-threaded player if active
         if self.player_process:
             try:
                 pid = self.player_process.pid
@@ -949,7 +1373,7 @@ class UnifiedMultiScreenClient:
                     self.player_process.wait(timeout=3)
                     print(f" {player_name} stopped gracefully")
                 except subprocess.TimeoutExpired:
-                    print(f" Force killing {player_name}")
+                    print(f"  Force killing {player_name}")
                     self.player_process.kill()
                     
                     try:
@@ -979,8 +1403,20 @@ class UnifiedMultiScreenClient:
         self.running = False
         self._shutdown_event.set()
         
+        # Stop fallback monitor
+        if self.fallback_monitor_thread and self.fallback_monitor_thread.is_alive():
+            self.logger.info("Stopping fallback monitor...")
+        
         # Stop components
         self.stop_stream()
+        
+        # Clean up window manager
+        if self.window_manager:
+            try:
+                self.window_manager.destroy()
+            except:
+                pass
+            self.window_manager = None
         
         print(f" Shutdown complete")
     
@@ -993,20 +1429,23 @@ class UnifiedMultiScreenClient:
         """Main execution flow"""
         try:
             print(f"\n{'='*80}")
-            print(f" UNIFIED MULTI-SCREEN CLIENT (ENHANCED)")
+            print(f" UNIFIED MULTI-SCREEN CLIENT")
             print(f"   Hostname: {self.hostname}")
             print(f"   Client ID: {self.client_id}")
             print(f"   Display Name: {self.display_name}")
             print(f"   Server: {self.server_url}")
             print(f"   Smart Player: {'Enabled' if not self.force_ffplay else 'Disabled (force ffplay)'}")
             print(f"   C++ Player: {'Available' if self.player_executable else 'Not found'}")
-            print(f"   Auto-Install: Enabled (packages installed automatically)")
             print(f"{'='*80}")
             
             # Step 1: Register with server
             if not self.register():
                 print(f" Registration failed - exiting")
                 return
+            
+            # Step 1.5: Create window manager for hotkeys (if enabled)
+            if self.enable_hotkeys:
+                self.create_window_manager()
             
             # Step 2: Main loop - wait for assignment and play streams
             while self.running and not self._shutdown_event.is_set():
@@ -1040,7 +1479,7 @@ class UnifiedMultiScreenClient:
                             self.current_player_type = None
                             continue
                         else:
-                            print(f" Unexpected stop reason: {stop_reason}")
+                            print(f"  Unexpected stop reason: {stop_reason}")
                             break
                     else:
                         print(f" Failed to start player, retrying in 10 seconds...")
@@ -1058,54 +1497,26 @@ class UnifiedMultiScreenClient:
             print(f"\n MULTI-SCREEN CLIENT SHUTDOWN")
             self.shutdown()
 
-    def get_player_status(self) -> Dict[str, Any]:
-        """Get the current status of the video player"""
-        status = {
-            'stream_url': self.current_stream_url,
-            'stream_version': self.current_stream_version,
-            'player_type': self.current_player_type,
-            'running': self.running,
-            'player_process': self.player_process.pid if self.player_process else None,
-            'auto_install_enabled': True  # New feature indicator
-        }
-        
-        return status
-
 
 def main():
-    """Main entry point for the enhanced multi-screen client"""
-    # Setup logging first
-    log_dir = Path.home() / "client_logs"
-    log_dir.mkdir(exist_ok=True)
-    
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_dir / "client.log"),
-            logging.StreamHandler()
-        ]
-    )
-    
+    """Main entry point for the multi-screen client"""
     parser = argparse.ArgumentParser(
         prog='client.py',
         description="""
- Enhanced Multi-Screen Client for Video Wall Systems
+ Unified Multi-Screen Client for Video Wall Systems
 
 A simple and reliable client for multi-screen video streaming that supports
-automatic player selection, optimized for single-threaded efficiency.
-
- NEW: Automatic package installation - no setup script needed!
+automatic player selection with intelligent monitor assignment.
 
 Features:
-    Automatic Python package installation (requests, etc.)
-    Automatic server registration with unique client identification
-    Smart player selection (C++ player for SEI streams, ffplay fallback)
-    Single-threaded mode optimized for efficiency
-    Efficient resource usage with 1 thread per client
-    Uses system default display (DISPLAY=:0.0)
-    Automatic reconnection and error recovery
-    Support for multiple instances (each in separate process)
+   Automatic server registration with unique client identification
+   Smart player selection (C++ player for SEI streams, ffplay fallback)
+   Automatic monitor assignment based on hostname and availability
+   Prevents multiple clients from using the same monitor
+   Movable fullscreen windows with hotkeys
+   Uses system default display (DISPLAY=:0.0)
+   Automatic reconnection and error recovery
+   Support for multiple instances on the same device
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
@@ -1115,25 +1526,80 @@ Features:
     python3 client.py --server http://192.168.1.100:5000 \\
       --hostname rpi-client-1 --display-name "Monitor 1"
 
-  Force ffplay for all streams:
+  Multiple clients on same device:
+    # Client 1:
     python3 client.py --server http://192.168.1.100:5000 \\
-      --hostname rpi-client-1 --display-name "Screen1" \\
-      --force-ffplay
+      --hostname rpi-client-1 --display-name "Client 1"
 
-  Test with debug mode:
-    python3 client.py --server http://YOUR_SERVER_IP:5000 \\
-      --hostname test-client --display-name "Test" \\
-      --debug
+    # Client 2:
+    python3 client.py --server http://192.168.1.100:5000 \\
+      --hostname rpi-client-2 --display-name "Client 2"
 
-  Note: Each client runs in its own process with 1 thread for optimal performance
+  Note: Uses system default display (DISPLAY=:0.0)
 
- ADVANCED OPTIONS:
+  ADVANCED OPTIONS:
 
   Force ffplay for all streams (disable smart selection):
     python3 client.py --server http://192.168.1.100:5000 \\
       --hostname client-1 --display-name "Screen 1" --force-ffplay
 
-  Test with debug mode:
+  Multi-monitor setup with auto-assignment:
+    # Auto-assign monitors based on hostname (recommended)
+    DISPLAY=:0 python3 client.py --server http://192.168.1.100:5000 \\
+      --hostname client-1 --display-name "Monitor 1" &
+    
+    DISPLAY=:0 python3 client.py --server http://192.168.1.100:5000 \\
+      --hostname client-2 --display-name "Monitor 2" &
+    
+    # Manual monitor assignment (if needed)
+    DISPLAY=:0 python3 client.py --server http://192.168.1.100:5000 \\
+      --hostname client-1 --display-name "Monitor 1" --monitor 0 &
+    
+    # Use hotkeys to move between monitors:
+    # Ctrl+M or Ctrl+Right: Next monitor
+    # Ctrl+Left: Previous monitor
+    # Ctrl+1-4: Specific monitor
+
+  Debug mode with detailed logging:
+    python3 client.py --server http://192.168.1.100:5000 \\
+      --hostname client-1 --display-name "Screen 1" --debug
+
+ DEPLOYMENT EXAMPLES:
+
+  Systemd service for Client 1:
+    ExecStart=/usr/bin/python3 client.py \\
+      --server http://192.168.1.100:5000 \\
+      --hostname rpi-client-1 \\
+      --display-name "Client 1"
+
+  Systemd service for Client 2:
+    ExecStart=/usr/bin/python3 client.py \\
+      --server http://192.168.1.100:5000 \\
+      --hostname rpi-client-2 \\
+      --display-name "Client 2"
+
+ SETUP PROCESS:
+
+  1. Ensure ffmpeg/ffplay is installed:
+     sudo apt install ffmpeg
+
+  2. Start client:
+     python3 client.py --server http://YOUR_SERVER_IP:5000 \\
+       --hostname client-1 --display-name "Screen 1"
+
+  3. Use web interface to assign clients to groups and start streaming
+
+
+
+ TROUBLESHOOTING:
+
+  Check display configuration:
+    xrandr --listmonitors
+
+  Test display:
+    xeyes &
+
+  View client logs:
     python3 client.py --server http://YOUR_SERVER_IP:5000 \\
       --hostname client-1 --display-name "Screen 1" --debug
 
@@ -1157,18 +1623,27 @@ For more information, visit: https://github.com/your-repo/openvideowalls
                                help='Display name for admin interface - Example: "Monitor 1"')
     
     # Optional arguments group
-    optional_group = parser.add_argument_group(' Optional Arguments')
+    optional_group = parser.add_argument_group('  Optional Arguments')
     optional_group.add_argument('--force-ffplay', 
                                action='store_true',
                                help='Force use of ffplay for all streams (disable smart C++/ffplay selection)')
 
+    optional_group.add_argument('--monitor', 
+                               type=int, 
+                               default=None,
+                               help='Monitor index to start on (0-based: 0=left, 1=right, 2=far-right, 3=bottom). If not specified, auto-assigns based on hostname and availability.')
+
     optional_group.add_argument('--debug', 
                                action='store_true',
-                               help='Enable debug logging (includes SEI detection details and auto-install info)')
+                               help='Enable debug logging (includes SEI detection details)')
+
+    optional_group.add_argument('--no-hotkeys', 
+                               action='store_true',
+                               help='Disable hotkey window manager (prevents gray boxes from appearing)')
 
     optional_group.add_argument('--version', 
                                action='version', 
-                               version=' Enhanced Multi-Screen Client v4.0 (Auto-Install Edition)')
+                               version=' Unified Multi-Screen Client v3.0')
     
     # Parse arguments
     args = parser.parse_args()
@@ -1179,6 +1654,8 @@ For more information, visit: https://github.com/your-repo/openvideowalls
         print("   Example: --server http://192.168.1.100:5000")
         print("   Example: --server https://videowall.example.com:5000")
         sys.exit(1)
+    
+
     
     # Validate hostname (basic check)
     if not args.hostname.strip():
@@ -1192,6 +1669,16 @@ For more information, visit: https://github.com/your-repo/openvideowalls
         print("   Example: --display-name \"Monitor 1\"")
         sys.exit(1)
     
+    # Validate monitor index (if specified)
+    if args.monitor is not None and (args.monitor < 0 or args.monitor > 3):
+        print(" Error: Monitor index must be between 0 and 3")
+        print("   0 = Monitor 1 (left)")
+        print("   1 = Monitor 2 (right)")
+        print("   2 = Monitor 3 (far-right)")
+        print("   3 = Monitor 4 (bottom)")
+        print("   Or omit --monitor for auto-assignment")
+        sys.exit(1)
+    
     # Configure logging level
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -1199,22 +1686,22 @@ For more information, visit: https://github.com/your-repo/openvideowalls
     
     # Create and run client
     try:
-        print(" Starting Enhanced Multi-Screen Client (Auto-Install Edition)...")
-        print(" Python packages will be installed automatically if needed")
-        print(" Press Ctrl+C to stop gracefully")
-        print()
-        
         client = UnifiedMultiScreenClient(
             server_url=args.server,
             hostname=args.hostname,
             display_name=args.display_name,
-            force_ffplay=args.force_ffplay
+            force_ffplay=args.force_ffplay,
+            initial_monitor=args.monitor,
+            enable_hotkeys=not args.no_hotkeys
         )
+        
+        print(" Starting Unified Multi-Screen Client...")
+        print("   Press Ctrl+C to stop gracefully")
         
         client.run()
         
     except KeyboardInterrupt:
-        print("\n Keyboard interrupt received")
+        print("\n  Keyboard interrupt received")
     except Exception as e:
         print(f"\n Fatal error: {e}")
         logging.error(f"Fatal error: {e}")

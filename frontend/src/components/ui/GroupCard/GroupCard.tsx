@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { AlertCircle } from 'lucide-react';
-import { Group, Client, Video as VideoType } from '@/types';
+import { Group, Client, Video as VideoType } from '../../../types';
 
 // Import sub-components
 import GroupCardHeader from './GroupCardHeader';

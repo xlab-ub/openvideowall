@@ -6,7 +6,7 @@ import { Badge } from '../../badge';
 import { Label } from '../../label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../select';
 import { Video, Copy, RotateCcw, ChevronUp, ChevronDown } from 'lucide-react';
-import { Group, Video as VideoType } from '@/types';
+import { Group, Video as VideoType } from '../../../../types';
 import { VideoAssignment } from '../types';
 
 interface VideoConfigurationSectionProps {

@@ -2,14 +2,14 @@
 
 import React from 'react';
 import { CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Button } from '../button';
+import { Badge } from '../badge';
 import { Collapsible, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { 
   Users, Play, Square, Container, CheckCircle, AlertCircle, 
   ChevronDown, ChevronUp, Copy, VideoIcon
 } from 'lucide-react';
-import { Group, Client } from '@/types';
+import { Group, Client } from '../../../types';
 import { VideoAssignment } from './types';
 
 interface GroupCardHeaderProps {

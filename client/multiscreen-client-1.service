@@ -1,0 +1,29 @@
+[Unit]
+Description=Multi-Screen Client 1 (UB_3S_1)
+After=graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+User=client3
+Group=client3
+WorkingDirectory=/home/client3/Multiscreen/client
+Environment=DISPLAY=:0
+EnvironmentFile=/home/client3/Multiscreen/client/.env
+ExecStart=/home/client3/Multiscreen/client/start_client1.sh
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/client3/Multiscreen/client
+
+[Install]
+WantedBy=graphical.target
+
+
+

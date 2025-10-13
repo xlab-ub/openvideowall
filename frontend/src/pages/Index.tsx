@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Monitor, Users, Video } from "lucide-react";
-import StreamsTab from "@/features/streaming/StreamsTab";
-import ClientsTab from "@/features/clients/ClientsTab";
-import VideoFilesTab from "@/features/videos/VideoFilesTab";
+import StreamsTab from "@/components/StreamsTab/StreamsTab";
+import ClientsTab from "@/components/ClientsTab";
+import VideoFilesTab from "@/components/VideoFilesTab";
 
 const STORAGE_KEY = 'activeTab';
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState<string>('streams');
-  const [clientsRefreshed, setClientsRefreshed] = useState<number>(0);
 
   const getInitialTab = (): string => {
     try {
@@ -35,12 +34,6 @@ const Index = () => {
     } catch (error) {
       console.warn('Failed to save tab to localStorage:', error);
     }
-  };
-
-  const handleClientsRefreshed = () => {
-    // Increment counter to trigger StreamsTab refresh
-    setClientsRefreshed(prev => prev + 1);
-    console.log('Clients refreshed, notifying StreamsTab to refresh...');
   };
 
   return (
@@ -77,10 +70,10 @@ const Index = () => {
           </TabsList>
 
           <TabsContent value="streams">
-            <StreamsTab clientsRefreshed={clientsRefreshed} />
+            <StreamsTab />
           </TabsContent>
           <TabsContent value="clients">
-            <ClientsTab onClientsRefreshed={handleClientsRefreshed} />
+            <ClientsTab />
           </TabsContent>
           <TabsContent value="videos">
             <VideoFilesTab />
