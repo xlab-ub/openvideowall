@@ -73,15 +73,15 @@ fi
 
 echo "📦 Installing system services..."
 
-# Copy service files to systemd directory
-cp multiscreen-client-1-system.service /etc/systemd/system/multiscreen-client-1.service
-cp multiscreen-client-2-system.service /etc/systemd/system/multiscreen-client-2.service
+# Copy service files to systemd directory (install as openvideowall-*.service)
+cp multiscreen-client-1-system.service /etc/systemd/system/openvideowall-client-1.service
+cp multiscreen-client-2-system.service /etc/systemd/system/openvideowall-client-2.service
 
 # Inject user and home directory into unit files
-sed -i "s|__USER__|$TARGET_USER|g" /etc/systemd/system/multiscreen-client-1.service
-sed -i "s|__HOME_DIR__|$HOME_DIR|g" /etc/systemd/system/multiscreen-client-1.service
-sed -i "s|__USER__|$TARGET_USER|g" /etc/systemd/system/multiscreen-client-2.service
-sed -i "s|__HOME_DIR__|$HOME_DIR|g" /etc/systemd/system/multiscreen-client-2.service
+sed -i "s|__USER__|$TARGET_USER|g" /etc/systemd/system/openvideowall-client-1.service
+sed -i "s|__HOME_DIR__|$HOME_DIR|g" /etc/systemd/system/openvideowall-client-1.service
+sed -i "s|__USER__|$TARGET_USER|g" /etc/systemd/system/openvideowall-client-2.service
+sed -i "s|__HOME_DIR__|$HOME_DIR|g" /etc/systemd/system/openvideowall-client-2.service
 
 echo "✅ Service files installed to /etc/systemd/system/"
 
@@ -94,28 +94,28 @@ echo "🎯 Service Management Commands:"
 echo "==============================="
 echo ""
 echo "Start services:"
-echo "  sudo systemctl start multiscreen-client-1"
-echo "  sudo systemctl start multiscreen-client-2"
+echo "  sudo systemctl start openvideowall-client-1"
+echo "  sudo systemctl start openvideowall-client-2"
 echo ""
 echo "Stop services:"
-echo "  sudo systemctl stop multiscreen-client-1"
-echo "  sudo systemctl stop multiscreen-client-2"
+echo "  sudo systemctl stop openvideowall-client-1"
+echo "  sudo systemctl stop openvideowall-client-2"
 echo ""
 echo "Check status:"
-echo "  sudo systemctl status multiscreen-client-1"
-echo "  sudo systemctl status multiscreen-client-2"
+echo "  sudo systemctl status openvideowall-client-1"
+echo "  sudo systemctl status openvideowall-client-2"
 echo ""
 echo "View logs:"
-echo "  sudo journalctl -u multiscreen-client-1 -f"
-echo "  sudo journalctl -u multiscreen-client-2 -f"
+echo "  sudo journalctl -u openvideowall-client-1 -f"
+echo "  sudo journalctl -u openvideowall-client-2 -f"
 echo ""
 echo "Enable auto-start (start on boot):"
-echo "  sudo systemctl enable multiscreen-client-1"
-echo "  sudo systemctl enable multiscreen-client-2"
+echo "  sudo systemctl enable openvideowall-client-1"
+echo "  sudo systemctl enable openvideowall-client-2"
 echo ""
 echo "Disable auto-start:"
-echo "  sudo systemctl disable multiscreen-client-1"
-echo "  sudo systemctl disable multiscreen-client-2"
+echo "  sudo systemctl disable openvideowall-client-1"
+echo "  sudo systemctl disable openvideowall-client-2"
 echo ""
 
 # Ask if user wants to start the services now
