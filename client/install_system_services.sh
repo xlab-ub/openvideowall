@@ -89,6 +89,11 @@ echo "✅ Service files installed to /etc/systemd/system/"
 echo "🔄 Reloading systemd..."
 systemctl daemon-reload
 
+echo "⚙️ Enabling services to start on boot by default..."
+systemctl enable openvideowall-client-1
+systemctl enable openvideowall-client-2
+echo "✅ Enabled: openvideowall-client-1, openvideowall-client-2"
+
 echo ""
 echo "🎯 Service Management Commands:"
 echo "==============================="
@@ -123,12 +128,12 @@ read -p "🚀 Do you want to start the services now? (y/n): " -n 1 -r
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "Starting services..."
-    systemctl start multiscreen-client-1
-    systemctl start multiscreen-client-2
+    systemctl start openvideowall-client-1
+    systemctl start openvideowall-client-2
     
     echo "Checking status..."
-    systemctl status multiscreen-client-1 --no-pager
-    systemctl status multiscreen-client-2 --no-pager
+    systemctl status openvideowall-client-1 --no-pager
+    systemctl status openvideowall-client-2 --no-pager
 fi
 
 echo ""
@@ -136,7 +141,7 @@ echo "✨ Installation complete!"
 echo ""
 echo "💡 Tips:"
 echo "   - Services will restart automatically if they crash"
-echo "   - Check logs if you have issues: sudo journalctl -u multiscreen-client-1 -f"
+echo "   - Check logs if you have issues: sudo journalctl -u openvideowall-client-1 -f"
 echo "   - Enable auto-start if you want them to start on boot"
 
 
