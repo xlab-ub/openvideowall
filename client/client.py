@@ -627,8 +627,8 @@ class UnifiedMultiScreenClient:
             result1 = subprocess.run(['wmctrl', '-r', f'Multi-Screen Client - {self.display_name}', '-b', 'add,fullscreen'], 
                                    check=False, capture_output=True, env={'DISPLAY': ':0'})
             
-            # Method 2: Try xdotool F11
-            result2 = subprocess.run(['xdotool', 'search', '--name', f'Multi-Screen Client - {self.display_name}', 'windowactivate', '--sync', 'key', 'F11'], 
+            # Method 2: Try xdotool to send ffplay's fullscreen toggle ('f')
+            result2 = subprocess.run(['xdotool', 'search', '--name', f'Multi-Screen Client - {self.display_name}', 'windowactivate', '--sync', 'key', 'f'], 
                                    check=False, capture_output=True, env={'DISPLAY': ':0'})
             
             # Method 3: Try to maximize and then fullscreen
@@ -1149,6 +1149,15 @@ Note: Make sure the client window has focus for hotkeys to work.
             self.logger.error(f"C++ Player error: {e}")
             return False
     
+    def _have_window_tools(self) -> bool:
+        """Check if wmctrl and xdotool are available for window control"""
+        try:
+            wmctrl_ok = subprocess.run(["which", "wmctrl"], capture_output=True).returncode == 0
+            xdotool_ok = subprocess.run(["which", "xdotool"], capture_output=True).returncode == 0
+            return wmctrl_ok and xdotool_ok
+        except Exception:
+            return False
+
     def _play_with_ffplay(self) -> bool:
         """Start playing with ffplay (for standard streams without SEI)"""
         try:
@@ -1164,11 +1173,17 @@ Note: Make sure the client window has focus for hotkeys to work.
                 "-framedrop",
                 "-strict", "experimental",
                 "-window_title", f"Multi-Screen Client - {self.display_name}",
-                # Removed -fs flag - we'll handle fullscreen with window management
                 "-autoexit",
-                "-loglevel", "warning",  # Reduce ffplay verbosity
-                self.current_stream_url
+                "-loglevel", "warning",
             ]
+
+            # If Wayland or window tools missing (common on Raspberry Pi), ask ffplay to go fullscreen itself
+            wayland = os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+            if wayland or not self._have_window_tools():
+                cmd.append("-fs")
+                self.logger.info("Enabling ffplay fullscreen (-fs) due to Wayland or missing wmctrl/xdotool")
+
+            cmd.append(self.current_stream_url)
             
             self.player_process = subprocess.Popen(
                 cmd, 
