@@ -16,5 +16,5 @@ echo "   Hostname: $CLIENT1_HOSTNAME"
 echo "   Display: $CLIENT1_DISPLAY_NAME"
 echo "   Monitor: $CLIENT1_MONITOR_INDEX ($CLIENT1_MONITOR_LOCATION)"
 cd "$(dirname "$0")"
-exec ./run_client.sh --server "$CLIENT1_SERVER_URL" --hostname "$CLIENT1_HOSTNAME" --display-name "$CLIENT1_DISPLAY_NAME" --monitor "$CLIENT1_MONITOR_INDEX" --no-hotkeys
+exec ./run_client.sh --server "$CLIENT1_SERVER_URL" --hostname "$CLIENT1_HOSTNAME" --display-name "$CLIENT1_DISPLAY_NAME" --monitor "$CLIENT1_MONITOR_INDEX"
 
