@@ -1,17 +1,17 @@
 [Unit]
 Description=Multi-Screen Client 2 (UB_3S_2)
-After=graphical-session.target multiscreen-client-1.service
+After=graphical-session.target openvideowall-client-1.service
 Wants=graphical-session.target
-Requires=multiscreen-client-1.service
+Requires=openvideowall-client-1.service
 
 [Service]
 Type=simple
-User=client3
-Group=client3
-WorkingDirectory=/home/client3/Multiscreen/client
+User=__USER__
+Group=__USER__
+WorkingDirectory=__HOME_DIR__/openvideowall/client
 Environment=DISPLAY=:0
-EnvironmentFile=/home/client3/Multiscreen/client/.env
-ExecStart=/home/client3/Multiscreen/client/start_client2_delayed.sh
+EnvironmentFile=__HOME_DIR__/openvideowall/client/.env
+ExecStart=__HOME_DIR__/openvideowall/client/start_client2_delayed.sh
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -21,7 +21,7 @@ StandardError=journal
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/home/client3/Multiscreen/client
+ReadWritePaths=__HOME_DIR__/openvideowall/client
 
 [Install]
 WantedBy=graphical.target

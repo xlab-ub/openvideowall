@@ -11,13 +11,48 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Get current user and home directory
-USER="client3"
-HOME_DIR="/home/client3"
+# Get target user and home directory (overridable via flags)
+# Defaults: use the invoking sudo user if available, else fallback to current
+TARGET_USER_DEFAULT="${SUDO_USER:-$(logname 2>/dev/null || whoami)}"
+HOME_DIR_DEFAULT=$(eval echo ~"$TARGET_USER_DEFAULT")
+
+TARGET_USER=""
+HOME_DIR=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --user)
+            TARGET_USER="$2"
+            shift 2
+            ;;
+        --home_dir|--home-dir)
+            HOME_DIR="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: sudo ./install_system_services.sh [--user USERNAME] [--home_dir /home/USERNAME]"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: sudo ./install_system_services.sh [--user USERNAME] [--home_dir /home/USERNAME]"
+            exit 1
+            ;;
+    esac
+done
+
+# Apply defaults if not provided
+if [ -z "$TARGET_USER" ]; then
+    TARGET_USER="$TARGET_USER_DEFAULT"
+fi
+if [ -z "$HOME_DIR" ]; then
+    HOME_DIR=$(eval echo ~"$TARGET_USER")
+fi
+
 SERVICE_DIR="$HOME_DIR/Multiscreen/client"
 
 echo "📋 Service Configuration:"
-echo "   User: $USER"
+echo "   User: $TARGET_USER"
 echo "   Home: $HOME_DIR"
 echo "   Service Directory: $SERVICE_DIR"
 echo ""
@@ -41,6 +76,12 @@ echo "📦 Installing system services..."
 # Copy service files to systemd directory
 cp multiscreen-client-1-system.service /etc/systemd/system/multiscreen-client-1.service
 cp multiscreen-client-2-system.service /etc/systemd/system/multiscreen-client-2.service
+
+# Inject user and home directory into unit files
+sed -i "s|__USER__|$TARGET_USER|g" /etc/systemd/system/multiscreen-client-1.service
+sed -i "s|__HOME_DIR__|$HOME_DIR|g" /etc/systemd/system/multiscreen-client-1.service
+sed -i "s|__USER__|$TARGET_USER|g" /etc/systemd/system/multiscreen-client-2.service
+sed -i "s|__HOME_DIR__|$HOME_DIR|g" /etc/systemd/system/multiscreen-client-2.service
 
 echo "✅ Service files installed to /etc/systemd/system/"
 

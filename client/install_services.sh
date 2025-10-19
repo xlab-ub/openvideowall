@@ -41,13 +41,16 @@ echo "📦 Installing services..."
 # Copy service files to systemd user directory
 mkdir -p ~/.config/systemd/user
 cp multiscreen-client-1.service ~/.config/systemd/user/
-cp multiscreen-client-2.service ~/.config/systemd/user/
+# cp multiscreen-client-2.service ~/.config/systemd/user/
 
 # Update service files with correct paths
-sed -i "s|/home/client3|$HOME_DIR|g" ~/.config/systemd/user/multiscreen-client-1.service
-sed -i "s|/home/client3|$HOME_DIR|g" ~/.config/systemd/user/multiscreen-client-2.service
-sed -i "s|client3|$USER|g" ~/.config/systemd/user/multiscreen-client-1.service
-sed -i "s|client3|$USER|g" ~/.config/systemd/user/multiscreen-client-2.service
+sed -i "s|/home/$USER|$HOME_DIR|g" ~/.config/systemd/user/multiscreen-client-1.service
+sed -i "s|$USER|$HOME_DIR|g" ~/.config/systemd/user/multiscreen-client-1.service
+# secondary client based on bool
+if [ "$SECONDARY_CLIENT" = true ]; then
+    sed -i "s|/home/$USER|$HOME_DIR|g" ~/.config/systemd/user/multiscreen-client-2.service
+    sed -i "s|$USER|$HOME_DIR|g" ~/.config/systemd/user/multiscreen-client-2.service
+fi
 
 echo "✅ Service files installed to ~/.config/systemd/user/"
 
@@ -90,11 +93,11 @@ echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "Starting services..."
     systemctl --user start multiscreen-client-1
-    systemctl --user start multiscreen-client-2
+    # systemctl --user start multiscreen-client-2
     
     echo "Checking status..."
     systemctl --user status multiscreen-client-1 --no-pager
-    systemctl --user status multiscreen-client-2 --no-pager
+    # systemctl --user status multiscreen-client-2 --no-pager
 fi
 
 echo ""

@@ -5,12 +5,12 @@ Wants=graphical-session.target
 
 [Service]
 Type=simple
-User=client3
-Group=client3
-WorkingDirectory=/home/client3/Multiscreen/client
+User=__USER__
+Group=__USER__
+WorkingDirectory=__HOME_DIR__/openvideowall/client
 Environment=DISPLAY=:0
-EnvironmentFile=/home/client3/Multiscreen/client/.env
-ExecStart=/home/client3/Multiscreen/client/start_client1.sh
+EnvironmentFile=__HOME_DIR__/openvideowall/client/.env
+ExecStart=__HOME_DIR__/openvideowall/client/start_client1.sh
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -20,7 +20,7 @@ StandardError=journal
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/home/client3/Multiscreen/client
+ReadWritePaths=__HOME_DIR__/openvideowall/client
 
 [Install]
 WantedBy=graphical.target
