@@ -64,10 +64,15 @@ if [ ! -f "multiscreen-client-1-system.service" ] || [ ! -f "multiscreen-client-
     exit 1
 fi
 
-# Check if run_client.sh exists and is executable
-if [ ! -f "run_client.sh" ] || [ ! -x "run_client.sh" ]; then
-    echo "❌ run_client.sh not found or not executable"
-    echo "   Make sure run_client.sh exists and has execute permissions"
+# Check if start scripts exist and are executable
+if [ ! -f "start_client1.sh" ] || [ ! -x "start_client1.sh" ]; then
+    echo "❌ start_client1.sh not found or not executable"
+    echo "   Make sure start_client1.sh exists and has execute permissions"
+    exit 1
+fi
+if [ ! -f "start_client2_delayed.sh" ] || [ ! -x "start_client2_delayed.sh" ]; then
+    echo "❌ start_client2_delayed.sh not found or not executable"
+    echo "   Make sure start_client2_delayed.sh exists and has execute permissions"
     exit 1
 fi
 

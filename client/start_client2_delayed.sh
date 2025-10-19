@@ -10,8 +10,11 @@ fi
 # Environment variables for Client 2 (must be set in .env file or environment)
 # CLIENT2_SERVER_URL, CLIENT2_HOSTNAME, CLIENT2_DISPLAY_NAME, CLIENT2_MONITOR_INDEX, CLIENT2_MONITOR_LOCATION, CLIENT2_STARTUP_DELAY
 
+# Default delay if not provided
+CLIENT2_STARTUP_DELAY="${CLIENT2_STARTUP_DELAY:-10}"
+
 echo "🕐 Waiting $CLIENT2_STARTUP_DELAY seconds before starting Client 2..."
-sleep $CLIENT2_STARTUP_DELAY
+sleep "$CLIENT2_STARTUP_DELAY"
 
 echo "🚀 Starting Multi-Screen Client 2..."
 echo "   Server: $CLIENT2_SERVER_URL"
