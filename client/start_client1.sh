@@ -16,4 +16,19 @@ echo "   Hostname: $CLIENT1_HOSTNAME"
 echo "   Display: $CLIENT1_DISPLAY_NAME"
 echo "   Monitor: 3 (override)"
 cd "$(dirname "$0")"
+
+# Ensure X/xdotool environment
+export DISPLAY="${DISPLAY:-:0}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:$PATH"
+
+# Wait until X socket and runtime dir exist
+for i in $(seq 1 20); do
+    if [ -S /tmp/.X11-unix/X0 ] && [ -d "$XDG_RUNTIME_DIR" ]; then
+        break
+    fi
+    sleep 1
+done
+
 exec DISPLAY=:0 python3 client.py --server "$CLIENT1_SERVER_URL" --hostname "$CLIENT1_HOSTNAME" --display-name "$CLIENT1_DISPLAY_NAME" --monitor 3
