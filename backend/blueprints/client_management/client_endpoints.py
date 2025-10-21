@@ -663,16 +663,42 @@ def wait_for_assignment():
             # If no stream URL yet, or if we have new stream IDs, rebuild it
             if not stream_url or current_stream_ids:
                 if assignment_status == "screen_assigned":
-                    # For screen assignment, use current active stream ID if available
+                    # For screen assignment, use the correct stream ID format that matches FFmpeg
                     screen_number = client.get("screen_number", 0)
-                    if current_stream_ids and f"test{screen_number}" in current_stream_ids:
-                        # Use the actual current stream ID from FFmpeg
-                        actual_stream_id = current_stream_ids[f"test{screen_number}"]
-                        logger.info(f" Using current active stream ID for screen {screen_number}: {actual_stream_id}")
-                    else:
-                        # Fallback to screen-based ID
+                    
+                    # FFmpeg is using format: d676130e_0, d676130e_1, d676130e_2
+                    # We need to get the base stream ID from the running FFmpeg process
+                    try:
+                        # Try to get the actual stream ID from FFmpeg process
+                        import subprocess
+                        result = subprocess.run(['ps', 'aux'], capture_output=True, text=True)
+                        ffmpeg_lines = [line for line in result.stdout.split('\n') if 'ffmpeg' in line and 'srt://' in line]
+                        
+                        if ffmpeg_lines:
+                            # Extract the base stream ID from FFmpeg command
+                            ffmpeg_cmd = ffmpeg_lines[0]
+                            if 'd676130e' in ffmpeg_cmd:
+                                base_stream_id = 'd676130e'
+                                actual_stream_id = f"{base_stream_id}_{screen_number}"
+                                logger.info(f" Using actual FFmpeg stream ID for screen {screen_number}: {actual_stream_id}")
+                            else:
+                                # Fallback: try to extract any stream ID pattern
+                                import re
+                                stream_match = re.search(r'streamid=#!::r=live/[^/]+/([^,]+)', ffmpeg_cmd)
+                                if stream_match:
+                                    base_stream_id = stream_match.group(1).split('_')[0]
+                                    actual_stream_id = f"{base_stream_id}_{screen_number}"
+                                    logger.info(f" Extracted base stream ID {base_stream_id}, using: {actual_stream_id}")
+                                else:
+                                    actual_stream_id = f"screen{screen_number}"
+                                    logger.warning(f" Could not extract stream ID from FFmpeg, using fallback: {actual_stream_id}")
+                        else:
+                            actual_stream_id = f"screen{screen_number}"
+                            logger.warning(f" No FFmpeg process found, using fallback: {actual_stream_id}")
+                    except Exception as e:
+                        logger.error(f" Error getting stream ID from FFmpeg: {e}")
                         actual_stream_id = f"screen{screen_number}"
-                        logger.warning(f" No current stream ID found, using fallback: {actual_stream_id}")
+                        logger.warning(f" Using fallback stream ID: {actual_stream_id}")
                 else:
                     # For stream assignment, use the assigned stream
                     actual_stream_id = client.get("stream_assignment", "default")

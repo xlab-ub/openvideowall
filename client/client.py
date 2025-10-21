@@ -1258,6 +1258,27 @@ Note: Make sure the client window has focus for hotkeys to work.
         except:
             return 1920, 1080
 
+    def _force_immediate_fullscreen(self):
+        """Force fullscreen immediately after window positioning"""
+        try:
+            if not self.player_process or self.player_process.poll() is not None:
+                return
+                
+            print(f"   🎯 FORCING IMMEDIATE FULLSCREEN")
+            pid_windows = self._find_player_window_ids()
+            if pid_windows:
+                for wid in pid_windows:
+                    print(f"   Activating window {wid} and sending fullscreen key")
+                    # Multiple methods to ensure fullscreen
+                    subprocess.run(['xdotool', 'windowactivate', '--sync', wid], capture_output=True)
+                    time.sleep(0.5)
+                    subprocess.run(['xdotool', 'key', 'f'], capture_output=True)
+                    time.sleep(0.5)
+                    subprocess.run(['wmctrl', '-ir', wid, '-b', 'add,fullscreen'], capture_output=True)
+                    print(f"   ✅ Applied fullscreen to window {wid}")
+        except Exception as e:
+            self.logger.error(f"Immediate fullscreen failed: {e}")
+
     def _enforce_fullscreen_periodic(self):
         """Periodically enforce fullscreen mode only if needed."""
         try:
@@ -1381,11 +1402,14 @@ Note: Make sure the client window has focus for hotkeys to work.
             # Only try once, and only if needed
             threading.Timer(5.0, self._position_window_on_monitor).start()
             
+            # Force fullscreen immediately after a short delay
+            threading.Timer(8.0, self._force_immediate_fullscreen).start()
+            
             # Start fallback monitoring after initial positioning
             threading.Timer(15.0, self._start_fallback_monitor).start()
             
-            # Disable periodic fullscreen enforcement - let ffplay handle it
-            # threading.Timer(3.0, self._enforce_fullscreen_periodic).start()
+            # Enable periodic fullscreen enforcement to ensure windows stay fullscreen
+            threading.Timer(3.0, self._enforce_fullscreen_periodic).start()
             
             # Continuous window positioning monitor disabled to prevent repositioning
             # self._start_window_positioning_monitor()
