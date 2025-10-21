@@ -85,34 +85,15 @@ export const useClientAssignment = (
         await clientApi.unassignClientFromGroup(clientId);
         console.log(` Client ${clientId} unassigned`);
 
-        showError({
-          message: "Client has been unassigned from the group",
-          error_code: 'CLIENT_UNASSIGNED',
-          error_category: '2xx',
-          context: {
-            component: 'useClientAssignment',
-            operation: 'unassignClient',
-            client_id: clientId,
-            timestamp: new Date().toISOString()
-          }
-        });
+        // Success toast was previously shown via error system; avoid labeling as error
+        console.log("Client unassigned from group", { clientId });
       } else {
         // Assign client to group
         await clientApi.assignClientToGroup(clientId, groupId);
         console.log(` Client ${clientId} assigned to group ${groupId}`);
 
-        showError({
-          message: "Client has been assigned to the group",
-          error_code: 'CLIENT_ASSIGNED',
-          error_category: '2xx',
-          context: {
-            component: 'useClientAssignment',
-            operation: 'assignClient',
-            client_id: clientId,
-            group_id: groupId,
-            timestamp: new Date().toISOString()
-          }
-        });
+        // Avoid using error system for success notifications
+        console.log("Client assigned to group", { clientId, groupId });
       }
 
       // Reload data to reflect changes
@@ -150,19 +131,7 @@ export const useClientAssignment = (
       await clientApi.assignClientToScreen(clientId, groupId, screenNumber);
       console.log(` Client ${clientId} assigned to screen ${screenNumber}`);
 
-      showError({
-        message: `Client assigned to screen ${screenNumber + 1}`,
-        error_code: 'SCREEN_ASSIGNED',
-        error_category: '2xx',
-        context: {
-          component: 'useClientAssignment',
-          operation: 'assignClientToScreen',
-          client_id: clientId,
-          group_id: groupId,
-          screen_number: screenNumber,
-          timestamp: new Date().toISOString()
-        }
-      });
+      console.log("Client assigned to screen", { clientId, groupId, screenNumber });
 
       // Reload data to show changes immediately
       await loadInitialData();
@@ -195,17 +164,7 @@ export const useClientAssignment = (
       await clientApi.unassignClientFromScreen(clientId);
       console.log(` Client ${clientId} unassigned from screen`);
 
-      showError({
-        message: "Client has been unassigned from the screen",
-        error_code: 'SCREEN_UNASSIGNED',
-        error_category: '2xx',
-        context: {
-          component: 'useClientAssignment',
-          operation: 'unassignClientFromScreen',
-          client_id: clientId,
-          timestamp: new Date().toISOString()
-        }
-      });
+      console.log("Client unassigned from screen", { clientId });
 
       // Reload data to show changes immediately
       await loadInitialData();
@@ -236,17 +195,7 @@ export const useClientAssignment = (
       await clientApi.autoAssignScreens(groupId);
       console.log(` Screens auto-assigned for group ${groupId}`);
 
-      showError({
-        message: "Clients have been automatically assigned to screens",
-        error_code: 'AUTO_ASSIGNMENT_COMPLETE',
-        error_category: '2xx',
-        context: {
-          component: 'useClientAssignment',
-          operation: 'autoAssignScreens',
-          group_id: groupId,
-          timestamp: new Date().toISOString()
-        }
-      });
+      console.log("Screens auto-assigned for group", { groupId });
 
       // Reload data to show changes immediately
       await loadInitialData();
