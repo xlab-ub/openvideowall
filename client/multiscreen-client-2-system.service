@@ -15,7 +15,6 @@ Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=XAUTHORITY=__HOME_DIR__/.Xauthority
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
 EnvironmentFile=__HOME_DIR__/openvideowall/client/.env
-ExecStartPre=/bin/sh -c 'for i in $(seq 1 20); do [ -S /tmp/.X11-unix/X0 ] && [ -d /run/user/%U ]; if [ $? -eq 0 ]; then exit 0; fi; sleep 1; done; exit 1'
 ExecStart=__HOME_DIR__/openvideowall/client/start_client2_delayed.sh
 Restart=always
 RestartSec=10
