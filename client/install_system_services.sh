@@ -78,6 +78,14 @@ fi
 
 echo "📦 Installing system services..."
 
+# Stop running services first (if they exist)
+echo "🛑 Stopping existing services (if running)..."
+systemctl stop openvideowall-client-1 2>/dev/null || true
+systemctl stop openvideowall-client-2 2>/dev/null || true
+systemctl disable openvideowall-client-1 2>/dev/null || true
+systemctl disable openvideowall-client-2 2>/dev/null || true
+echo "✅ Existing services stopped and disabled"
+
 # Ensure required packages for window control and playback
 echo "🔍 Checking required packages (xdotool, wmctrl, ffmpeg)..."
 if command -v apt >/dev/null 2>&1; then
