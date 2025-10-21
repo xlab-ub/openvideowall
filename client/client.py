@@ -339,7 +339,7 @@ class UnifiedMultiScreenClient:
             window_title = f"Multi-Screen Client - {self.display_name}"
             
             # Find the window by title, prioritizing video windows
-            result = subprocess.run(['wmctrl', '-l'], capture_output=True, text=True, env={'DISPLAY': ':0'})
+            result = subprocess.run(['wmctrl', '-l'], capture_output=True, text=True)
             if result.returncode == 0:
                 # Look for windows, prioritizing video windows over manager windows
                 video_windows = []
@@ -361,7 +361,7 @@ class UnifiedMultiScreenClient:
                 # Try to move video windows first
                 for line in video_windows:
                     window_id = line.split()[0]
-                    subprocess.run(['wmctrl', '-ir', window_id, '-e', f'0,{x},{y},-1,-1'], env={'DISPLAY': ':0'})
+                    subprocess.run(['wmctrl', '-ir', window_id, '-e', f'0,{x},{y},-1,-1'])
                     print(f"Moved video window to Monitor {monitor_index + 1} (x={x}, y={y})")
                     return
                 
@@ -369,12 +369,12 @@ class UnifiedMultiScreenClient:
                 if not video_windows and manager_windows:
                     for line in manager_windows:
                         window_id = line.split()[0]
-                        subprocess.run(['wmctrl', '-ir', window_id, '-e', f'0,{x},{y},-1,-1'], env={'DISPLAY': ':0'})
+                        subprocess.run(['wmctrl', '-ir', window_id, '-e', f'0,{x},{y},-1,-1'])
                         print(f"Moved manager window to Monitor {monitor_index + 1} (x={x}, y={y})")
                         return
             
             # Fallback: try xdotool if wmctrl doesn't work
-            subprocess.run(['xdotool', 'search', '--name', window_title, 'windowmove', str(x), str(y)], env={'DISPLAY': ':0'})
+            subprocess.run(['xdotool', 'search', '--name', window_title, 'windowmove', str(x), str(y)])
             print(f"Moved to Monitor {monitor_index + 1} (x={x}, y={y})")
             
         except FileNotFoundError:
@@ -404,13 +404,13 @@ class UnifiedMultiScreenClient:
             print(f"   🎯 Positioning window on Monitor {self.current_monitor + 1} (x={x}, y={y})")
             
             # Simple approach: try to move any Multi-Screen Client window
-            for attempt in range(20):
-                time.sleep(1)
+            for attempt in range(10):
+                time.sleep(2)
                 
                 print(f"   🔄 Attempt {attempt + 1}/10: Looking for windows...")
                 
                 # Get list of windows
-                result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True, env={'DISPLAY': ':0'})
+                result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
                 if result.returncode != 0:
                     print(f"   ❌ Could not list windows: {result.stderr}")
                     continue
@@ -451,14 +451,14 @@ class UnifiedMultiScreenClient:
                     print(f"   Moving window {window['id']} to ({x}, {y})")
                     move_result = subprocess.run([
                         'wmctrl', '-ir', window['id'], '-e', f'0,{x},{y},-1,-1'
-                    ], capture_output=True, text=True, env={'DISPLAY': ':0'})
+                    ], capture_output=True, text=True)
                     
                     if move_result.returncode == 0:
                         print(f"   ✅ Window moved successfully!")
                         
                         # Verify position
                         time.sleep(1)
-                        verify_result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True, env={'DISPLAY': ':0'})
+                        verify_result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
                         if verify_result.returncode == 0:
                             for verify_line in verify_result.stdout.split('\n'):
                                 if window['id'] in verify_line:
