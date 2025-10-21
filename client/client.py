@@ -1059,7 +1059,7 @@ Note: Make sure the client window has focus for hotkeys to work.
         return False
 
     def send_heartbeat(self) -> bool:
-        """Send heartbeat to server to keep connection alive"""
+        """Send heartbeat to server to keep connection alive and check for updates"""
         try:
             response = requests.post(
                 f"{self.server_url}/api/clients/heartbeat",
@@ -1072,6 +1072,24 @@ Note: Make sure the client window has focus for hotkeys to work.
             
             if data.get("success", False):
                 print(f" Heartbeat sent successfully")
+                
+                # Check if server has updated our stream URL
+                if "stream_url" in data and data["stream_url"] != self.current_stream_url:
+                    print(f" Server updated stream URL during heartbeat:")
+                    print(f"   Old: {self.current_stream_url}")
+                    print(f"   New: {data['stream_url']}")
+                    self.current_stream_url = data["stream_url"]
+                    self.current_stream_version = data.get("stream_version", self.current_stream_version)
+                    
+                    # Restart ffplay if it's currently running
+                    if self.player_process and self.player_process.poll() is None:
+                        print(f" Restarting ffplay with new URL...")
+                        self.player_process.terminate()
+                        self.player_process = None
+                        self.current_player_type = None
+                    
+                    return True
+                
                 return True
             else:
                 print(f" Heartbeat failed: {data.get('error', 'Unknown error')}")
@@ -1508,6 +1526,38 @@ Note: Make sure the client window has focus for hotkeys to work.
         except Exception as e:
             self.logger.debug(f"Stream change check failed: {e}")
             return False
+
+    def _check_for_stream_url_update(self) -> bool:
+        """Check if the stream URL has been updated on the server"""
+        try:
+            # Get current assignment from server
+            response = requests.get(f"{self.server_url}/api/clients/wait_for_assignment", 
+                                 params={"client_id": self.client_id}, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success"):
+                    new_stream_url = data.get("stream_url")
+                    new_stream_version = data.get("stream_version")
+                    
+                    # Check if stream URL has changed
+                    if new_stream_url and new_stream_url != self.current_stream_url:
+                        print(f" Stream URL update detected:")
+                        print(f"   Old URL: {self.current_stream_url}")
+                        print(f"   New URL: {new_stream_url}")
+                        print(f"   Old version: {self.current_stream_version}")
+                        print(f"   New version: {new_stream_version}")
+                        
+                        # Update our cached values
+                        self.current_stream_url = new_stream_url
+                        self.current_stream_version = new_stream_version
+                        return True
+                    else:
+                        print(f" Stream URL unchanged: {new_stream_url}")
+            return False
+        except Exception as e:
+            print(f" Error checking for stream URL update: {e}")
+            return False
     
     def stop_stream(self):
         """Stop the player with comprehensive cleanup"""
@@ -1600,12 +1650,32 @@ Note: Make sure the client window has focus for hotkeys to work.
             
             # Step 2: Main loop - wait for assignment and play streams
             while self.running and not self._shutdown_event.is_set():
-                # Send periodic heartbeat to keep connection alive
-                if hasattr(self, 'last_heartbeat') and (time.time() - self.last_heartbeat) > 30:
-                    self.send_heartbeat()
-                    self.last_heartbeat = time.time()
+                # Send periodic heartbeat to keep connection alive and check for URL updates
+                current_time = time.time()
+                if hasattr(self, 'last_heartbeat') and (current_time - self.last_heartbeat) > 30:
+                    print(f" Sending heartbeat to server...")
+                    if self.send_heartbeat():
+                        self.last_heartbeat = current_time
+                        print(f" Heartbeat successful")
+                    else:
+                        print(f" Heartbeat failed, will retry...")
                 elif not hasattr(self, 'last_heartbeat'):
-                    self.last_heartbeat = time.time()
+                    self.last_heartbeat = current_time
+                
+                # Check for stream URL updates every 60 seconds
+                if hasattr(self, 'last_url_check') and (current_time - self.last_url_check) > 60:
+                    print(f" Checking for stream URL updates...")
+                    if self._check_for_stream_url_update():
+                        print(f" Stream URL updated, restarting player...")
+                        if self.player_process:
+                            self.player_process.terminate()
+                            self.player_process = None
+                        # Don't clear current_stream_url here - it was already updated in _check_for_stream_url_update
+                        self.current_stream_version = None
+                        self.current_player_type = None
+                    self.last_url_check = current_time
+                elif not hasattr(self, 'last_url_check'):
+                    self.last_url_check = current_time
                 
                 # Wait for stream assignment
                 if self.wait_for_assignment():

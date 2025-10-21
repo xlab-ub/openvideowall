@@ -793,13 +793,24 @@ def client_heartbeat():
         
         logger.info(f"Client {client_id} heartbeat updated: {current_time}")
         
-        return jsonify({
+        # Return current stream information for client to check for updates
+        response_data = {
             "success": True,
             "message": "Heartbeat received",
             "client_id": client_id,
             "timestamp": current_time,
             "status": "active"
-        }), 200
+        }
+        
+        # Include current stream URL and version if client has assignments
+        if client.get("stream_url"):
+            response_data["stream_url"] = client["stream_url"]
+        if client.get("stream_version"):
+            response_data["stream_version"] = client["stream_version"]
+        if client.get("assignment_status"):
+            response_data["assignment_status"] = client["assignment_status"]
+        
+        return jsonify(response_data), 200
         
     except Exception as e:
         logger.error(f"Error in client_heartbeat: {e}")
