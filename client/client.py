@@ -1461,78 +1461,19 @@ Note: Make sure the client window has focus for hotkeys to work.
     def _check_for_stream_change(self) -> bool:
         """Check if the stream URL or version has changed on the server"""
         try:
-            # Use new endpoint if available, fallback to legacy
-            try:
-                response = requests.post(
-                    f"{self.server_url}/api/clients/wait_for_assignment",
-                    json={"client_id": self.client_id},
-                    timeout=5
-                )
-            except requests.exceptions.RequestException:
-                response = requests.post(
-                    f"{self.server_url}/wait_for_stream",
-                    json={"client_id": self.client_id},
-                    timeout=5
-                )
-            
-            # Accept both 200 and 202 as valid responses
-            if response.status_code in [200, 202]:
-                data = response.json()
-                status = data.get('status')
-                
-                if status == "ready_to_play":
-                    new_stream_url = self.fix_stream_url(data.get('stream_url'))
-                    new_stream_version = data.get('stream_version')
-                    
-                    # Check for meaningful changes
-                    url_changed = (new_stream_url and 
-                                self.current_stream_url and 
-                                new_stream_url != self.current_stream_url)
-                    
-                    version_changed = False
-                    if new_stream_version is not None and self.current_stream_version is not None:
-                        version_changed = (new_stream_version != self.current_stream_version)
-                    
-                    if url_changed or version_changed:
-                        self.logger.info(f"Stream change detected:")
-                        if url_changed:
-                            self.logger.info(f"  URL: {self.current_stream_url}  {new_stream_url}")
-                        if version_changed:
-                            self.logger.info(f"  Version: {self.current_stream_version}  {new_stream_version}")
-                        
-                        self.current_stream_url = new_stream_url
-                        if new_stream_version is not None:
-                            self.current_stream_version = new_stream_version
-                        return True
-                    
-                elif status in ["waiting_for_streaming", "group_not_running", "not_registered"]:
-                    # These statuses indicate the stream has stopped
-                    self.logger.info(f"Stream stopped on server: {status}")
-                    return True
-                
-                # For waiting states (202), no change needed
-                elif response.status_code == 202:
-                    self.logger.debug(f"Stream check: still waiting ({status})")
-                    return False
-                    
-            elif response.status_code == 404:
-                # Client not found - may have been unregistered
-                self.logger.warning("Client not found on server during stream check")
+            # FIXED: Don't call wait_for_assignment() here as it creates an infinite loop
+            # Instead, just check if we still have a valid stream URL
+            if not self.current_stream_url:
+                self.logger.info("No current stream URL - need to restart")
                 return True
-                
-            else:
-                # Unexpected status code
-                self.logger.debug(f"Stream check returned unexpected status: {response.status_code}")
-                
-            return False
             
-        except requests.exceptions.Timeout:
-            # Timeout is not necessarily an error for a quick check
-            self.logger.debug("Stream check timed out - assuming no change")
+            # For now, assume stream is still valid if we have a URL
+            # In the future, we could add a lightweight health check endpoint
+            # that doesn't trigger the assignment flow
             return False
             
         except Exception as e:
-            self.logger.debug(f"Stream check failed: {e}")
+            self.logger.debug(f"Stream change check failed: {e}")
             return False
     
     def stop_stream(self):
