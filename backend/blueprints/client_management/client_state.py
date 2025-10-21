@@ -7,7 +7,7 @@ import time
 import threading
 import logging
 from typing import Dict, List, Any, Optional
-from flask import current_app
+from flask import current_app  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,16 @@ class ClientState:
         with self.clients_lock:
             self.clients[client_id] = client_data
             logger.debug(f"Added/updated client: {client_id}")
+
+        # Persist to Mongo (best-effort)
+        try:
+            try:
+                from ...db.mongo import upsert_one  # type: ignore
+            except ImportError:
+                from db.mongo import upsert_one  # type: ignore
+            upsert_one("clients", {"client_id": client_id}, {**client_data})
+        except Exception as e:
+            logger.debug(f"Mongo persist (add/update) failed for {client_id}: {e}")
     
     def add_or_update_client(self, client_id: str, client_data: Dict[str, Any]):
         """Add or update client (alias for add_client for compatibility)"""
@@ -53,8 +63,22 @@ class ClientState:
             if client_id in self.clients:
                 del self.clients[client_id]
                 logger.debug(f"Removed client: {client_id}")
-                return True
-            return False
+                removed = True
+            else:
+                removed = False
+
+        # Reflect removal in Mongo
+        if removed:
+            try:
+                try:
+                    from ...db.mongo import delete_one  # type: ignore
+                except ImportError:
+                    from db.mongo import delete_one  # type: ignore
+                delete_one("clients", {"client_id": client_id})
+            except Exception as e:
+                logger.debug(f"Mongo delete failed for {client_id}: {e}")
+
+        return removed
     
     def get_all_clients(self) -> Dict[str, Any]:
         """Get all clients"""
@@ -69,7 +93,7 @@ class ClientState:
                 if client.get("group_id") == group_id
             ]
     
-    def get_active_clients(self, group_id: str = None) -> List[Dict[str, Any]]:
+    def get_active_clients(self, group_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get active clients (seen within 60 seconds)"""
         current_time = time.time()
         with self.clients_lock:
@@ -87,6 +111,15 @@ class ClientState:
             if client_id in self.clients:
                 self.clients[client_id]["last_seen"] = current_time
                 self.clients[client_id]["status"] = "active"
+        # Mongo best-effort
+        try:
+            try:
+                from ...db.mongo import upsert_one  # type: ignore
+            except ImportError:
+                from db.mongo import upsert_one  # type: ignore
+            upsert_one("clients", {"client_id": client_id}, {"last_seen": current_time, "status": "active"})
+        except Exception as e:
+            logger.debug(f"Mongo heartbeat update failed for {client_id}: {e}")
     
     def update_client(self, client_id: str, **kwargs):
         """Update specific fields of a client"""
@@ -97,6 +130,25 @@ class ClientState:
                 logger.debug(f"Updated client {client_id}: {kwargs}")
             else:
                 logger.warning(f"Attempted to update non-existent client: {client_id}")
+
+        # Persist partial update to Mongo
+        if kwargs:
+            try:
+                allowed = {
+                    "hostname", "ip_address", "display_name", "platform",
+                    "registered_at", "last_seen", "status", "assignment_status",
+                    "group_id", "group_name", "stream_assignment", "stream_url",
+                    "screen_number", "assigned_at", "unassigned_at", "srt_ip"
+                }
+                to_set = {k: v for k, v in kwargs.items() if k in allowed}
+                if to_set:
+                    try:
+                        from ...db.mongo import upsert_one  # type: ignore
+                    except ImportError:
+                        from db.mongo import upsert_one  # type: ignore
+                    upsert_one("clients", {"client_id": client_id}, {**to_set})
+            except Exception as e:
+                logger.debug(f"Mongo partial update failed for {client_id}: {e}")
 
 # DON'T create a separate instance - use Flask's app state
 # Global client state instance

@@ -8,25 +8,30 @@ import os
 import time
 import threading
 import logging
-from flask import Flask, jsonify
-from flask_cors import CORS
+from flask import Flask, jsonify  # type: ignore
+from flask_cors import CORS  # type: ignore
+try:
+    from dotenv import load_dotenv  # type: ignore
+    load_dotenv()
+except Exception:
+    pass
 
 # Handle imports for both direct execution and module import
 try:
-    from .app_config import AppConfig
-    from .blueprints.group_management import group_bp
-    from .blueprints.video_management import video_bp
-    from .blueprints.client_management import client_bp
-    from .blueprints.streaming import multi_stream_bp, split_stream_bp
-    from .blueprints.docker_management import docker_bp
+    from .app_config import AppConfig  # type: ignore
+    from .blueprints.group_management import group_bp  # type: ignore
+    from .blueprints.video_management import video_bp  # type: ignore
+    from .blueprints.client_management import client_bp  # type: ignore
+    from .blueprints.streaming import multi_stream_bp, split_stream_bp  # type: ignore
+    from .blueprints.docker_management import docker_bp  # type: ignore
 except ImportError:
     # Fallback for direct execution
-    from app_config import AppConfig
-    from blueprints.group_management import group_bp
-    from blueprints.video_management import video_bp
-    from blueprints.client_management import client_bp
-    from blueprints.streaming import multi_stream_bp, split_stream_bp
-    from blueprints.docker_management import docker_bp
+    from app_config import AppConfig  # type: ignore
+    from blueprints.group_management import group_bp  # type: ignore
+    from blueprints.video_management import video_bp  # type: ignore
+    from blueprints.client_management import client_bp  # type: ignore
+    from blueprints.streaming import multi_stream_bp, split_stream_bp  # type: ignore
+    from blueprints.docker_management import docker_bp  # type: ignore
 
 
 def clear_all_logs():
@@ -107,6 +112,42 @@ def create_app():
     # Initialize persistent client state
     from blueprints.client_management.client_state import get_persistent_state
     app.config['APP_STATE'] = get_persistent_state()
+
+    # SQL database disabled for Mongo-only mode
+    logger.info("SQL database is disabled (Mongo-only mode)")
+
+    # Initialize MongoDB if configured
+    try:
+        try:
+            from .db.mongo import is_mongo_enabled, ensure_indexes  # type: ignore
+        except ImportError:
+            from db.mongo import is_mongo_enabled, ensure_indexes  # type: ignore
+        if is_mongo_enabled():
+            ensure_indexes()
+            logger.info("MongoDB enabled and indexes ensured")
+            # Preload clients from Mongo into in-memory state
+            try:
+                try:
+                    from .db.mongo import find_all  # type: ignore
+                except ImportError:
+                    from db.mongo import find_all  # type: ignore
+                state = app.config['APP_STATE']
+                docs = find_all("clients")
+                if docs:
+                    for doc in docs:
+                        cid = doc.get('client_id')
+                        if cid:
+                            try:
+                                state.add_client(cid, doc)
+                            except Exception as e:
+                                logger.warning(f"Failed to load client {cid} from Mongo into state: {e}")
+                    logger.info(f"Loaded {len(docs)} clients from MongoDB into state")
+            except Exception as mongo_preload_e:
+                logger.warning(f"Could not preload clients from MongoDB: {mongo_preload_e}")
+        else:
+            logger.info("MongoDB not enabled (set OPENVIDEOWALL_MONGO_URL to enable)")
+    except Exception as mongo_e:
+        logger.warning(f"MongoDB initialization skipped or failed: {mongo_e}")
     
     # Create uploads directory
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)

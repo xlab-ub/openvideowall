@@ -4,7 +4,7 @@ Group management with pure Docker discovery architecture.
 No internal state - Docker containers are the single source of truth.
 """
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify  # type: ignore
 import logging
 import traceback
 import time
@@ -32,11 +32,11 @@ def validate_group_data(data: Dict[str, Any]) -> tuple[bool, Optional[str]]:
     if not data.get("name"):
         return False, "Missing group name"
         
-    if not data.get("name").strip():
+    if not (data.get("name") or "").strip():
         return False, "Group name cannot be empty"
         
     # Validate name format (Docker container names have restrictions)
-    name = data.get("name").strip()
+    name = (data.get("name") or "").strip()
     if not name.replace("-", "").replace("_", "").isalnum():
         return False, "Group name can only contain letters, numbers, hyphens, and underscores"
         
@@ -131,6 +131,17 @@ def create_group():
             
             if created_group:
                 logger.info(f" Successfully created and verified group: {group_name}")
+                # Persist group to Mongo (best-effort)
+                try:
+                    try:
+                        from ..db.mongo import upsert_one  # type: ignore
+                    except ImportError:
+                        from db.mongo import upsert_one  # type: ignore
+                    doc = dict(created_group)
+                    doc["id"] = doc.get("id") or doc.get("name")
+                    upsert_one("groups", {"id": doc["id"]}, doc)
+                except Exception as e:
+                    logger.warning(f"Failed to persist group to Mongo: {e}")
                 return jsonify({
                     "message": f"Group '{group_name}' created successfully",
                     "group": created_group,
@@ -213,7 +224,7 @@ def delete_group():
                     from blueprints.streaming.multi_stream import stop_group_streams
                 except ImportError:
                     # Fallback function if import fails
-                    def stop_group_streams(group_id: str):
+                    def stop_group_streams(group):  # type: ignore
                         """Stop streams for a group"""
                         return {"success": True, "message": "Stream stopping not available"}
             
@@ -259,6 +270,16 @@ def delete_group():
                 "error": f"Failed to delete Docker container: {str(e)}"
             }), 500
         
+        # Remove cached group row in Mongo (best-effort)
+        try:
+            try:
+                from ..db.mongo import delete_one  # type: ignore
+            except ImportError:
+                from db.mongo import delete_one  # type: ignore
+            delete_one("groups", {"id": target_group.get("id") or target_group.get("name")})
+        except Exception as e:
+            logger.warning(f"Failed to delete group from Mongo: {e}")
+
         # Step 3: Get updated groups list
         logger.info(" Retrieving updated groups list after deletion")
         updated_groups_result = get_groups_from_docker()
@@ -306,6 +327,19 @@ def get_groups():
         if result.get("success", False):
             groups = result.get("groups", [])
             logger.info(f" Found {len(groups)} groups from Docker discovery")
+
+            # Best-effort: upsert these groups in Mongo cache
+            try:
+                try:
+                    from ..db.mongo import upsert_one  # type: ignore
+                except ImportError:
+                    from db.mongo import upsert_one  # type: ignore
+                for g in groups:
+                    doc = dict(g)
+                    doc["id"] = doc.get("id") or doc.get("name")
+                    upsert_one("groups", {"id": doc["id"]}, doc)
+            except Exception as e:
+                logger.debug(f"Failed to upsert groups into Mongo cache: {e}")
             
             return jsonify({
                 "groups": groups,
@@ -316,6 +350,22 @@ def get_groups():
         else:
             error_msg = result.get("error", "Unknown error during Docker discovery")
             logger.error(f" Docker discovery failed: {error_msg}")
+            # Fallback to Mongo cache
+            try:
+                try:
+                    from ..db.mongo import find_all  # type: ignore
+                except ImportError:
+                    from db.mongo import find_all  # type: ignore
+                cached_groups = find_all("groups")
+                if cached_groups:
+                    return jsonify({
+                        "groups": cached_groups,
+                        "total": len(cached_groups),
+                        "discovery_timestamp": time.time(),
+                        "source": "mongo_cache"
+                    }), 200
+            except Exception:
+                pass
             return jsonify({
                 "error": f"Failed to discover groups: {error_msg}",
                 "groups": [],
