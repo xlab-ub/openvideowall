@@ -1354,6 +1354,8 @@ Note: Make sure the client window has focus for hotkeys to work.
                     for line in iter(self.player_process.stderr.readline, ''):
                         if line.strip():
                             line_clean = line.strip()
+                            # Show ALL ffplay output for debugging
+                            print(f"FFPLAY: {line_clean}")
                             if "error" in line_clean.lower():
                                 self.logger.error(f" {line_clean}")
                             elif "warning" in line_clean.lower():
@@ -1368,6 +1370,7 @@ Note: Make sure the client window has focus for hotkeys to work.
             
             print(f"   Player PID: {self.player_process.pid}")
             print(f"   Status: Playing standard stream")
+            print(f"   Command: {' '.join(cmd)}")
             self.logger.info(f"ffplay started for standard stream")
             
             # Wait a bit for window to appear, then force map/raise it
@@ -1447,6 +1450,12 @@ Note: Make sure the client window has focus for hotkeys to work.
             return 'user_exit'
         
         exit_code = self.player_process.returncode if self.player_process else -1
+        
+        print(f"\n PLAYER STOPPED - DEBUG INFO:")
+        print(f"   Player: {player_display_name}")
+        print(f"   Exit Code: {exit_code}")
+        print(f"   Stream URL: {self.current_stream_url}")
+        print(f"   Stream Version: {self.current_stream_version}")
         
         if exit_code == 0:
             print(f" {player_display_name} ended normally")
