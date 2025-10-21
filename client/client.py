@@ -339,9 +339,13 @@ class UnifiedMultiScreenClient:
             pid_windows = self._find_player_window_ids()
             if pid_windows:
                 for wid in pid_windows:
+                    # Move to position
                     subprocess.run(['wmctrl', '-ir', wid, '-e', f'0,{x},{y},-1,-1'])
+                    # Force fullscreen and keep it
                     subprocess.run(['wmctrl', '-ir', wid, '-b', 'add,fullscreen'])
-                print(f"Moved player window(s) to Monitor {monitor_index + 1} (x={x}, y={y})")
+                    # Also try xdotool fullscreen toggle to ensure it stays
+                    subprocess.run(['xdotool', 'windowactivate', '--sync', wid, 'key', 'f'], capture_output=True)
+                print(f"Moved player window(s) to Monitor {monitor_index + 1} (x={x}, y={y}) and forced fullscreen")
                 return
             
             # Use wmctrl to move the window (works with Wayland/XWayland)
@@ -371,7 +375,9 @@ class UnifiedMultiScreenClient:
                 for line in video_windows:
                     window_id = line.split()[0]
                     subprocess.run(['wmctrl', '-ir', window_id, '-e', f'0,{x},{y},-1,-1'])
-                    print(f"Moved video window to Monitor {monitor_index + 1} (x={x}, y={y})")
+                    subprocess.run(['wmctrl', '-ir', window_id, '-b', 'add,fullscreen'])
+                    subprocess.run(['xdotool', 'windowactivate', '--sync', window_id, 'key', 'f'], capture_output=True)
+                    print(f"Moved video window to Monitor {monitor_index + 1} (x={x}, y={y}) and forced fullscreen")
                     return
                 
                 # If no video windows found, try manager windows as fallback
@@ -379,7 +385,9 @@ class UnifiedMultiScreenClient:
                     for line in manager_windows:
                         window_id = line.split()[0]
                         subprocess.run(['wmctrl', '-ir', window_id, '-e', f'0,{x},{y},-1,-1'])
-                        print(f"Moved manager window to Monitor {monitor_index + 1} (x={x}, y={y})")
+                        subprocess.run(['wmctrl', '-ir', window_id, '-b', 'add,fullscreen'])
+                        subprocess.run(['xdotool', 'windowactivate', '--sync', window_id, 'key', 'f'], capture_output=True)
+                        print(f"Moved manager window to Monitor {monitor_index + 1} (x={x}, y={y}) and forced fullscreen")
                         return
             
             # Fallback: try xdotool if wmctrl doesn't work
@@ -1205,6 +1213,25 @@ Note: Make sure the client window has focus for hotkeys to work.
         except Exception as e:
             self.logger.debug(f"Could not force window visible: {e}")
 
+    def _enforce_fullscreen_periodic(self):
+        """Periodically enforce fullscreen mode to prevent window resizing."""
+        try:
+            if not self.player_process or self.player_process.poll() is not None:
+                return
+                
+            pid_windows = self._find_player_window_ids()
+            if pid_windows:
+                for wid in pid_windows:
+                    # Force fullscreen
+                    subprocess.run(['wmctrl', '-ir', wid, '-b', 'add,fullscreen'], capture_output=True)
+                    # Also send 'f' key to ffplay to toggle fullscreen
+                    subprocess.run(['xdotool', 'windowactivate', '--sync', wid, 'key', 'f'], capture_output=True)
+                
+                # Schedule next enforcement in 10 seconds
+                threading.Timer(10.0, self._enforce_fullscreen_periodic).start()
+        except Exception as e:
+            self.logger.debug(f"Fullscreen enforcement failed: {e}")
+
     def _play_with_ffplay(self) -> bool:
         """Start playing with ffplay (for standard streams without SEI)"""
         try:
@@ -1272,6 +1299,9 @@ Note: Make sure the client window has focus for hotkeys to work.
             
             # Start fallback monitoring after initial positioning
             threading.Timer(15.0, self._start_fallback_monitor).start()
+            
+            # Start periodic fullscreen enforcement
+            threading.Timer(5.0, self._enforce_fullscreen_periodic).start()
             
             # Continuous window positioning monitor disabled to prevent repositioning
             # self._start_window_positioning_monitor()
