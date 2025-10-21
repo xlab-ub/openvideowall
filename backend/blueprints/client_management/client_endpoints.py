@@ -296,9 +296,8 @@ def register_client():
             "registered_at": existing_client.get("registered_at", current_time) if existing_client else current_time,
             "last_seen": current_time,
             "status": "active",
-            "assignment_status": "waiting_for_assignment",
             
-            # Group and stream assignment
+            # Group and stream assignment - preserve existing assignments
             "group_id": existing_client.get("group_id") if existing_client else None,
             "group_name": existing_client.get("group_name") if existing_client else None,
             "stream_assignment": existing_client.get("stream_assignment") if existing_client else None,
@@ -316,6 +315,9 @@ def register_client():
                 client_data["assignment_status"] = "stream_assigned"
             else:
                 client_data["assignment_status"] = "group_assigned"
+        else:
+            # Only set to waiting_for_assignment if no existing assignments
+            client_data["assignment_status"] = "waiting_for_assignment"
         
         # Save client
         if hasattr(state, 'add_client'):
