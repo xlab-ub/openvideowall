@@ -78,6 +78,23 @@ fi
 
 echo "📦 Installing system services..."
 
+# Ensure required packages for window control and playback
+echo "🔍 Checking required packages (xdotool, wmctrl, ffmpeg)..."
+if command -v apt >/dev/null 2>&1; then
+    MISSING_PKGS=()
+    for pkg in xdotool wmctrl ffmpeg; do
+        dpkg -s "$pkg" >/dev/null 2>&1 || MISSING_PKGS+=("$pkg")
+    done
+    if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
+        echo "⬇️  Installing: ${MISSING_PKGS[*]}"
+        apt update && apt install -y ${MISSING_PKGS[*]}
+    else
+        echo "✅ Required packages already installed"
+    fi
+else
+    echo "⚠️  Non-Debian system; ensure xdotool, wmctrl, and ffmpeg are installed manually."
+fi
+
 # Copy service files to systemd directory (install as openvideowall-*.service)
 cp multiscreen-client-1-system.service /etc/systemd/system/openvideowall-client-1.service
 cp multiscreen-client-2-system.service /etc/systemd/system/openvideowall-client-2.service
