@@ -335,6 +335,15 @@ class UnifiedMultiScreenClient:
         self.current_monitor = monitor_index
         
         try:
+            # First, try to move windows by current player PID (most reliable)
+            pid_windows = self._find_player_window_ids()
+            if pid_windows:
+                for wid in pid_windows:
+                    subprocess.run(['wmctrl', '-ir', wid, '-e', f'0,{x},{y},-1,-1'])
+                    subprocess.run(['wmctrl', '-ir', wid, '-b', 'add,fullscreen'])
+                print(f"Moved player window(s) to Monitor {monitor_index + 1} (x={x}, y={y})")
+                return
+            
             # Use wmctrl to move the window (works with Wayland/XWayland)
             window_title = f"Multi-Screen Client - {self.display_name}"
             
@@ -1158,6 +1167,44 @@ Note: Make sure the client window has focus for hotkeys to work.
         except Exception:
             return False
 
+    def _find_player_window_ids(self) -> list:
+        """Find window IDs owned by the current player process (ffplay or C++)."""
+        try:
+            if not self.player_process or not self.player_process.pid:
+                return []
+            pid_str = str(self.player_process.pid)
+            result = subprocess.run(['wmctrl', '-lp'], capture_output=True, text=True)
+            if result.returncode != 0 or not result.stdout:
+                return []
+            window_ids = []
+            for line in result.stdout.splitlines():
+                parts = line.split()
+                if len(parts) >= 3 and parts[2] == pid_str:
+                    window_ids.append(parts[0])
+            return window_ids
+        except Exception:
+            return []
+
+    def _ensure_window_visible(self):
+        """Force the ffplay/player window to map and raise so it's visible."""
+        try:
+            # Wait for window to appear (by PID or title)
+            for i in range(10):
+                pid_windows = self._find_player_window_ids()
+                if pid_windows:
+                    for wid in pid_windows:
+                        subprocess.run(['xdotool', 'windowmap', wid], capture_output=True)
+                        subprocess.run(['xdotool', 'windowactivate', '--sync', wid], capture_output=True)
+                    print(f"   ✅ Window(s) mapped and raised")
+                    return
+                time.sleep(0.5)
+            # Fallback: try by title
+            window_title = f"Multi-Screen Client - {self.display_name}"
+            subprocess.run(['xdotool', 'search', '--name', window_title, 'windowmap', 'windowactivate', '--sync'], capture_output=True)
+            print(f"   ⚠️  Raised window by title")
+        except Exception as e:
+            self.logger.debug(f"Could not force window visible: {e}")
+
     def _play_with_ffplay(self) -> bool:
         """Start playing with ffplay (for standard streams without SEI)"""
         try:
@@ -1166,8 +1213,14 @@ Note: Make sure the client window has focus for hotkeys to work.
             print(f"   Stream Version: {self.current_stream_version}")
             print(f"   Capability: Standard video playback")
             
+            # Force SDL to create a window immediately
+            env = os.environ.copy()
+            env['SDL_VIDEODRIVER'] = 'x11'  # Force X11 even on Wayland for window control
+            env['DISPLAY'] = env.get('DISPLAY', ':0')
+            
             cmd = [
                 "ffplay",
+                "-fs",  # Always start fullscreen
                 "-fflags", "nobuffer",
                 "-flags", "low_delay", 
                 "-framedrop",
@@ -1175,21 +1228,15 @@ Note: Make sure the client window has focus for hotkeys to work.
                 "-window_title", f"Multi-Screen Client - {self.display_name}",
                 "-autoexit",
                 "-loglevel", "warning",
+                self.current_stream_url
             ]
-
-            # If Wayland or window tools missing (common on Raspberry Pi), ask ffplay to go fullscreen itself
-            wayland = os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
-            if wayland or not self._have_window_tools():
-                cmd.append("-fs")
-                self.logger.info("Enabling ffplay fullscreen (-fs) due to Wayland or missing wmctrl/xdotool")
-
-            cmd.append(self.current_stream_url)
             
             self.player_process = subprocess.Popen(
                 cmd, 
                 stdout=subprocess.PIPE, 
                 stderr=subprocess.PIPE,
-                universal_newlines=True
+                universal_newlines=True,
+                env=env
             )
             
             # Monitor ffplay output (less verbose than C++ player)
@@ -1214,10 +1261,14 @@ Note: Make sure the client window has focus for hotkeys to work.
             print(f"   Status: Playing standard stream")
             self.logger.info(f"ffplay started for standard stream")
             
-            # Position window on the correct monitor after a delay (multiple attempts)
-            threading.Timer(2.0, self._position_window_on_monitor).start()   # First attempt
-            threading.Timer(5.0, self._position_window_on_monitor).start()   # Second attempt
-            threading.Timer(10.0, self._position_window_on_monitor).start()  # Third attempt
+            # Wait a bit for window to appear, then force map/raise it
+            time.sleep(3)
+            self._ensure_window_visible()
+            
+            # Position window on the correct monitor after ensuring visibility
+            threading.Timer(1.0, self._position_window_on_monitor).start()
+            threading.Timer(4.0, self._position_window_on_monitor).start()
+            threading.Timer(8.0, self._position_window_on_monitor).start()
             
             # Start fallback monitoring after initial positioning
             threading.Timer(15.0, self._start_fallback_monitor).start()

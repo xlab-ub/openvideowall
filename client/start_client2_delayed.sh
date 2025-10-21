@@ -13,7 +13,7 @@ fi
 echo "🕐 Waiting $CLIENT2_STARTUP_DELAY seconds before starting Client 2..."
 sleep $CLIENT2_STARTUP_DELAY
 
-echo "🚀 Starting Multi-Screen Client 2..."
+echo "🚀 Starting Multi-Screen Client 2 (direct python)..."
 echo "   Server: $CLIENT2_SERVER_URL"
 echo "   Hostname: $CLIENT2_HOSTNAME"
 echo "   Display: $CLIENT2_DISPLAY_NAME"
@@ -33,4 +33,4 @@ for i in $(seq 1 20); do
     fi
     sleep 1
 done
-exec ./run_client.sh --server "$CLIENT2_SERVER_URL" --hostname "$CLIENT2_HOSTNAME" --display-name "$CLIENT2_DISPLAY_NAME" --monitor "$CLIENT2_MONITOR_INDEX"
+exec python3 client.py --server "$CLIENT2_SERVER_URL" --hostname "$CLIENT2_HOSTNAME" --display-name "$CLIENT2_DISPLAY_NAME" --monitor "$CLIENT2_MONITOR_INDEX"
