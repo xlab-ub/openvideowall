@@ -31,4 +31,4 @@ for i in $(seq 1 20); do
     sleep 1
 done
 
-exec DISPLAY=:0 python3 client.py --server "$CLIENT1_SERVER_URL" --hostname "$CLIENT1_HOSTNAME" --display-name "$CLIENT1_DISPLAY_NAME" --monitor 3
+exec python3 client.py --server "$CLIENT1_SERVER_URL" --hostname "$CLIENT1_HOSTNAME" --display-name "$CLIENT1_DISPLAY_NAME" --monitor 3
