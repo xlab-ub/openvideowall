@@ -1168,7 +1168,6 @@ Note: Make sure the client window has focus for hotkeys to work.
             
             cmd = [
                 "ffplay",
-                "-fs",  # Always start in fullscreen for reliability across Wayland/X11
                 "-fflags", "nobuffer",
                 "-flags", "low_delay", 
                 "-framedrop",
@@ -1176,8 +1175,15 @@ Note: Make sure the client window has focus for hotkeys to work.
                 "-window_title", f"Multi-Screen Client - {self.display_name}",
                 "-autoexit",
                 "-loglevel", "warning",
-                self.current_stream_url
             ]
+
+            # If Wayland or window tools missing (common on Raspberry Pi), ask ffplay to go fullscreen itself
+            wayland = os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+            if wayland or not self._have_window_tools():
+                cmd.append("-fs")
+                self.logger.info("Enabling ffplay fullscreen (-fs) due to Wayland or missing wmctrl/xdotool")
+
+            cmd.append(self.current_stream_url)
             
             self.player_process = subprocess.Popen(
                 cmd, 
