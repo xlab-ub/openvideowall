@@ -28,22 +28,23 @@ const ClientsTab = () => {
       console.log(' Raw API response:', clientsData);
       console.log(' All clients:', clientsData.clients);
 
-      // Filter to only show active/connected clients
-      const activeClients = (clientsData.clients || []).filter(client => client.status === 'active');
-      console.log(' Active clients only:', activeClients);
+      // Show ALL clients (both active and offline)
+      const allClients = clientsData.clients || [];
+      console.log(' All clients (active and offline):', allClients);
 
-      setClients(activeClients);
+      setClients(allClients);
 
       if (showRefreshing) {
         showError({
-          message: `Clients refreshed successfully. Found ${activeClients.length} active clients (${clientsData.clients?.length || 0} total)`,
+          message: `Clients refreshed successfully. Found ${allClients.length} clients (${allClients.filter(c => c.status === 'active').length} active, ${allClients.filter(c => c.status === 'inactive').length} offline)`,
           error_code: 'CLIENTS_REFRESHED',
           error_category: '2xx',
           context: {
             component: 'ClientsTab',
             operation: 'refreshClients',
-            active_clients: activeClients.length,
-            total_clients: clientsData.clients?.length || 0,
+            total_clients: allClients.length,
+            active_clients: allClients.filter(c => c.status === 'active').length,
+            offline_clients: allClients.filter(c => c.status === 'inactive').length,
             timestamp: new Date().toISOString()
           }
         });
@@ -63,7 +64,6 @@ const ClientsTab = () => {
         }
       });
     } finally {
-      setLoading(false);
       if (showRefreshing) setRefreshing(false);
     }
   };
@@ -172,7 +172,7 @@ const ClientsTab = () => {
 
           {/* Debug Info */}
           <div className="mb-4 p-3 bg-gray-100 rounded text-sm text-gray-600">
-            Debug: {clients.length} active clients connected, {filteredClients.length} shown after filtering
+            Debug: {clients.length} total clients ({clients.filter(c => c.status === 'active').length} online, {clients.filter(c => c.status === 'inactive').length} offline), {filteredClients.length} shown after filtering
           </div>
 
           {/* Clients List */}
@@ -181,13 +181,13 @@ const ClientsTab = () => {
               <div className="text-center py-8">
                 <Monitor className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                 <h3 className="text-lg font-medium text-gray-700 mb-2">
-                  {clients.length === 0 ? 'No Active Clients' : 'No Clients Found'}
+                  {clients.length === 0 ? 'No Clients' : 'No Clients Found'}
                 </h3>
                 <p className="text-gray-500">
                   {searchTerm
-                    ? 'No active clients match your search criteria.'
+                    ? 'No clients match your search criteria.'
                     : clients.length === 0
-                      ? 'No clients are currently connected to the server. When clients connect, they will appear here automatically.'
+                      ? 'No clients have been registered with the server. When clients connect, they will appear here automatically.'
                       : 'All clients are filtered out.'
                   }
                 </p>
@@ -209,17 +209,23 @@ const ClientsTab = () => {
                   className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-4">
-                    {/* Always green since we only show connected clients */}
-                    <div className="w-3 h-3 rounded-full bg-green-500" />
+                    {/* Show actual status */}
+                    <div className={`w-3 h-3 rounded-full ${client.status === 'active' ? 'bg-green-500' : 'bg-red-500'}`} />
 
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <h3 className="font-medium text-gray-900">
                           {client.display_name || client.hostname || client.client_id}
                         </h3>
-                        {/* Always show as connected since we only display active clients */}
-                        <Badge variant="default" className="bg-green-100 text-green-800 border-green-200">
-                          Connected
+                        {/* Show actual status */}
+                        <Badge 
+                          variant="default" 
+                          className={client.status === 'active' 
+                            ? 'bg-green-100 text-green-800 border-green-200' 
+                            : 'bg-red-100 text-red-800 border-red-200'
+                          }
+                        >
+                          {client.status === 'active' ? 'Online' : 'Offline'}
                         </Badge>
                       </div>
 

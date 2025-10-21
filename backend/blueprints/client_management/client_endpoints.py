@@ -286,6 +286,67 @@ def register_client():
         existing_client = state.get_client(client_id) if hasattr(state, 'get_client') else state.clients.get(client_id)
         action = "updated" if existing_client else "registered"
         
+        # If client exists and has assignments, preserve them and just update heartbeat
+        if existing_client and (existing_client.get("group_id") or existing_client.get("assignment_status") != "waiting_for_assignment"):
+            logger.info(f"Client {client_id} has existing assignments, preserving them and updating heartbeat only")
+            # Just update heartbeat and last_seen
+            existing_client["last_seen"] = current_time
+            existing_client["status"] = "active"
+            # Save the updated client
+            if hasattr(state, 'add_client'):
+                state.add_client(client_id, existing_client)
+            elif hasattr(state, 'add_or_update_client'):
+                state.add_or_update_client(client_id, existing_client)
+            else:
+                state.clients[client_id] = existing_client
+            
+            return jsonify({
+                "success": True,
+                "message": "Client heartbeat updated, assignments preserved",
+                "client_id": client_id,
+                "existing_assignments": {
+                    "group_id": existing_client.get("group_id"),
+                    "assignment_status": existing_client.get("assignment_status"),
+                    "screen_number": existing_client.get("screen_number"),
+                    "stream_assignment": existing_client.get("stream_assignment")
+                }
+            }), 200
+        
+        # Auto-assign clients based on hostname patterns
+        auto_assigned = False
+        if not existing_client or not existing_client.get("group_id"):
+            # Get available groups
+            try:
+                from ..docker_management import get_all_groups
+                groups = get_all_groups()
+                if groups:
+                    # Find the first available group (usually "Large_screens_3")
+                    target_group = groups[0]
+                    group_id = target_group.get("id")
+                    group_name = target_group.get("name")
+                    
+                    # Auto-assign based on hostname patterns
+                    if "UB_3S_1" in hostname or "client1" in hostname.lower() or "monitor1" in hostname.lower():
+                        screen_number = 0
+                        stream_assignment = f"screen0_{group_id}"
+                        assignment_status = "screen_assigned"
+                        auto_assigned = True
+                        logger.info(f"Auto-assigning {client_id} to {group_name} screen 0")
+                    elif "UB_3S_2" in hostname or "client2" in hostname.lower() or "monitor2" in hostname.lower():
+                        screen_number = 1
+                        stream_assignment = f"screen1_{group_id}"
+                        assignment_status = "screen_assigned"
+                        auto_assigned = True
+                        logger.info(f"Auto-assigning {client_id} to {group_name} screen 1")
+                    elif "UB_3S_3" in hostname or "client3" in hostname.lower() or "monitor3" in hostname.lower():
+                        screen_number = 2
+                        stream_assignment = f"screen2_{group_id}"
+                        assignment_status = "screen_assigned"
+                        auto_assigned = True
+                        logger.info(f"Auto-assigning {client_id} to {group_name} screen 2")
+            except Exception as e:
+                logger.warning(f"Could not auto-assign client: {e}")
+        
         # Create or update client record
         client_data = {
             "client_id": client_id,
@@ -297,13 +358,13 @@ def register_client():
             "last_seen": current_time,
             "status": "active",
             
-            # Group and stream assignment - preserve existing assignments
-            "group_id": existing_client.get("group_id") if existing_client else None,
-            "group_name": existing_client.get("group_name") if existing_client else None,
-            "stream_assignment": existing_client.get("stream_assignment") if existing_client else None,
+            # Group and stream assignment - preserve existing assignments or use auto-assigned values
+            "group_id": existing_client.get("group_id") if existing_client else (group_id if auto_assigned else None),
+            "group_name": existing_client.get("group_name") if existing_client else (group_name if auto_assigned else None),
+            "stream_assignment": existing_client.get("stream_assignment") if existing_client else (stream_assignment if auto_assigned else None),
             "stream_url": existing_client.get("stream_url") if existing_client else None,
-            "screen_number": existing_client.get("screen_number") if existing_client else None,
-            "assigned_at": existing_client.get("assigned_at") if existing_client else None,
+            "screen_number": existing_client.get("screen_number") if existing_client else (screen_number if auto_assigned else None),
+            "assigned_at": existing_client.get("assigned_at") if existing_client else (current_time if auto_assigned else None),
             "srt_ip": existing_client.get("srt_ip", "127.0.0.1") if existing_client else "127.0.0.1"
         }
         
@@ -318,6 +379,10 @@ def register_client():
         else:
             # Only set to waiting_for_assignment if no existing assignments
             client_data["assignment_status"] = "waiting_for_assignment"
+        
+        # If auto-assigned, log the assignment
+        if auto_assigned:
+            logger.info(f"Auto-assigned {client_id} to group {client_data['group_id']}, screen {client_data['screen_number']}, status: {client_data['assignment_status']}")
         
         # Save client
         if hasattr(state, 'add_client'):
