@@ -12,7 +12,6 @@ WorkingDirectory=__HOME_DIR__/openvideowall/client
 Environment=DISPLAY=:0
 Environment=SDL_VIDEODRIVER=x11
 EnvironmentFile=__HOME_DIR__/openvideowall/client/.env
-ExecStartPre=/bin/sleep 10
 ExecStart=__HOME_DIR__/openvideowall/client/start_client2_delayed.sh
 Restart=always
 RestartSec=10
