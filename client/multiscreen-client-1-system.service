@@ -9,7 +9,7 @@ User=__USER__
 Group=__USER__
 WorkingDirectory=__HOME_DIR__/openvideowall/client
 Environment=DISPLAY=:0
-Environment=SDL_VIDEODRIVER=x11
+Environment=SDL_VIDEODRIVER=wayland
 EnvironmentFile=__HOME_DIR__/openvideowall/client/.env
 ExecStart=__HOME_DIR__/openvideowall/client/start_client1.sh
 Restart=always
