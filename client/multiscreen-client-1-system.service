@@ -1,7 +1,7 @@
 [Unit]
 Description=Multi-Screen Client 1 (UB_3S_1)
-After=graphical-session.target
-Wants=graphical-session.target
+After=graphical.target display-manager.service network-online.target
+Wants=graphical.target network-online.target
 
 [Service]
 Type=simple
@@ -9,8 +9,12 @@ User=__USER__
 Group=__USER__
 WorkingDirectory=__HOME_DIR__/openvideowall/client
 Environment=DISPLAY=:0
+Environment=XAUTHORITY=__HOME_DIR__/.Xauthority
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+Environment=XDG_SESSION_TYPE=x11
 Environment=SDL_VIDEODRIVER=x11
-EnvironmentFile=__HOME_DIR__/openvideowall/client/.env
+EnvironmentFile=-__HOME_DIR__/openvideowall/client/.env
+ExecStartPre=/bin/sleep 5
 ExecStart=__HOME_DIR__/openvideowall/client/start_client1.sh
 Restart=always
 RestartSec=10
@@ -19,7 +23,7 @@ StandardError=journal
 
 # Security settings
 NoNewPrivileges=true
-PrivateTmp=true
+# PrivateTmp prevents access to /tmp/.X11-unix; keep disabled for X11 access
 ProtectSystem=strict
 ReadWritePaths=__HOME_DIR__/openvideowall/client
 
