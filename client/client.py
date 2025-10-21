@@ -417,13 +417,39 @@ class UnifiedMultiScreenClient:
         
         try:
             x, y = self.monitor_positions[self.current_monitor]
-            print(f"   🎯 Positioning window on Monitor {self.current_monitor + 1} (x={x}, y={y})")
+            print(f"   🎯 Checking window position on Monitor {self.current_monitor + 1} (x={x}, y={y})")
             
-            # Simple approach: try to move any Multi-Screen Client window
-            for attempt in range(10):
+            # First check if window is already positioned correctly
+            pid_windows = self._find_player_window_ids()
+            if pid_windows:
+                for wid in pid_windows:
+                    result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        for line in result.stdout.split('\n'):
+                            if wid in line:
+                                parts = line.split()
+                                if len(parts) >= 6:
+                                    current_x, current_y, w, h = int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5])
+                                    # Check if already positioned correctly and fullscreen
+                                    positioned_ok = abs(current_x - x) < 100 and abs(current_y - y) < 100
+                                    fullscreen_ok = w >= 1900 and h >= 1000
+                                    
+                                    if positioned_ok and fullscreen_ok:
+                                        print(f"   ✅ Window already correctly positioned and fullscreen")
+                                        return
+                                    elif positioned_ok and not fullscreen_ok:
+                                        print(f"   🔧 Window positioned correctly but not fullscreen, fixing...")
+                                        subprocess.run(['xdotool', 'windowactivate', '--sync', wid, 'key', 'f'], capture_output=True)
+                                        return
+                                    else:
+                                        print(f"   🔧 Window needs positioning: current=({current_x},{current_y}) target=({x},{y})")
+                                        break
+            
+            # If we get here, window needs positioning
+            for attempt in range(5):
                 time.sleep(2)
                 
-                print(f"   🔄 Attempt {attempt + 1}/10: Looking for windows...")
+                print(f"   🔄 Attempt {attempt + 1}/5: Looking for windows...")
                 
                 # Get list of windows
                 result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
@@ -1323,9 +1349,9 @@ Note: Make sure the client window has focus for hotkeys to work.
             self._ensure_window_visible()
             
             # Position window on the correct monitor after ensuring visibility
-            threading.Timer(1.0, self._position_window_on_monitor).start()
-            threading.Timer(4.0, self._position_window_on_monitor).start()
-            threading.Timer(8.0, self._position_window_on_monitor).start()
+            # But only if we're not already on the correct monitor
+            threading.Timer(2.0, self._position_window_on_monitor).start()
+            threading.Timer(6.0, self._position_window_on_monitor).start()
             
             # Start fallback monitoring after initial positioning
             threading.Timer(15.0, self._start_fallback_monitor).start()
