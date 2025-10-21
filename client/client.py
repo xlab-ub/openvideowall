@@ -1329,6 +1329,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                 "-fs",  # Always start fullscreen
                 "-x", "1920",  # Force width
                 "-y", "1080",  # Force height
+                "-fps", "30",  # Force 30 FPS
                 "-fflags", "nobuffer",
                 "-flags", "low_delay", 
                 "-framedrop",
