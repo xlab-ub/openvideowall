@@ -185,7 +185,7 @@ def build_reliable_ffmpeg_command(
     grid_rows: int = 2,
     grid_cols: int = 2,
     framerate: int = 30,
-    bitrate: str = "2500k",
+    bitrate: str = "4000k",
     stream_ids: Dict[str, str] = None
 ) -> List[str]:
     """
@@ -233,11 +233,11 @@ def build_reliable_ffmpeg_command(
     
     ffmpeg_cmd.extend(["-filter_complex", filter_complex])
     
-    # Reliable encoding settings - balanced performance and quality
+    # High quality encoding settings - improved for clarity
     base_encoding = [
         "-c:v", "libx264",
-        "-preset", "faster",           # Good balance of speed and quality
-        "-crf", "24",                  # Good quality
+        "-preset", "medium",           # Better quality than faster
+        "-crf", "18",                  # Much better quality (lower = better)
         "-g", "30",                    # 1 second keyframes
         "-threads", "4",               # Reasonable thread count
         "-tune", "zerolatency",        # Low latency
@@ -245,8 +245,8 @@ def build_reliable_ffmpeg_command(
         "-level", "4.0",
         "-pix_fmt", "yuv420p",
         "-r", str(framerate),
-        "-maxrate", bitrate,
-        "-bufsize", str(int(bitrate.rstrip('k')) * 1.5) + "k",
+        "-maxrate", "4000k",           # Higher bitrate for better quality
+        "-bufsize", "6000k",           # Larger buffer for quality
         "-f", "mpegts"
     ]
     

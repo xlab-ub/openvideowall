@@ -98,7 +98,7 @@ def build_split_screen_ffmpeg_command(
     grid_rows: int = 2,
     grid_cols: int = 2,
     framerate: int = 30,
-    bitrate: str = "3000k",
+    bitrate: str = "4000k",
     sei: str = "681d5c8f-80cd-4847-930a-99b9484b4a32+000000"
 ) -> List[str]:
     """Build FFmpeg command for split-screen streaming - using multi-stream structure"""
@@ -133,11 +133,11 @@ def build_split_screen_ffmpeg_command(
     
     ffmpeg_cmd.extend(["-filter_complex", filter_complex])
     
-    # Use the exact same encoding settings as multi-stream
+    # High quality encoding settings - improved for clarity
     base_encoding = [
         "-c:v", "libx264",
-        "-preset", "faster",
-        "-crf", "24",
+        "-preset", "medium",           # Better quality than faster
+        "-crf", "18",                  # Much better quality (lower = better)
         "-g", "30",
         "-threads", "4",
         "-tune", "zerolatency",
@@ -145,8 +145,8 @@ def build_split_screen_ffmpeg_command(
         "-level", "4.0",
         "-pix_fmt", "yuv420p",
         "-r", str(framerate),
-        "-maxrate", bitrate,
-        "-bufsize", str(int(bitrate.rstrip('k')) * 1.5) + "k",
+        "-maxrate", "4000k",           # Higher bitrate for better quality
+        "-bufsize", "6000k",           # Larger buffer for quality
         "-f", "mpegts"
     ]
     

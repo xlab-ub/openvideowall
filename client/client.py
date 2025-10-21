@@ -1600,13 +1600,23 @@ Note: Make sure the client window has focus for hotkeys to work.
                             continue
                         elif stop_reason in ['stream_ended', 'connection_lost', 'error']:
                             print(f" Stream stopped ({stop_reason}), waiting for new assignment...")
+                            print(f" Client will stay connected and wait for new stream...")
                             self.current_stream_url = None
                             self.current_stream_version = None
                             self.current_player_type = None
+                            # Clear any existing player process
+                            if self.player_process:
+                                self.player_process = None
                             continue
                         else:
                             print(f"  Unexpected stop reason: {stop_reason}")
-                            break
+                            print(f"  Treating as stream end, will wait for new assignment...")
+                            self.current_stream_url = None
+                            self.current_stream_version = None
+                            self.current_player_type = None
+                            if self.player_process:
+                                self.player_process = None
+                            continue
                     else:
                         print(f" Failed to start player, retrying in 10 seconds...")
                         if self._shutdown_event.wait(timeout=10):
@@ -1619,9 +1629,20 @@ Note: Make sure the client window has focus for hotkeys to work.
         except Exception as e:
             print(f" Fatal error: {e}")
             self.logger.error(f"Fatal error in main loop: {e}")
+            print(f" Attempting to recover and continue...")
+            # Try to recover instead of shutting down
+            try:
+                time.sleep(5)  # Wait a bit before retrying
+                print(f" Retrying main loop...")
+                # Don't call shutdown, just continue
+            except Exception as recovery_error:
+                print(f" Recovery failed: {recovery_error}")
+                print(f"\n MULTI-SCREEN CLIENT SHUTDOWN")
+                self.shutdown()
         finally:
-            print(f"\n MULTI-SCREEN CLIENT SHUTDOWN")
-            self.shutdown()
+            if not self.running:
+                print(f"\n MULTI-SCREEN CLIENT SHUTDOWN")
+                self.shutdown()
 
 
 def main():
