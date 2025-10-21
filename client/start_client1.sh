@@ -23,12 +23,9 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:$PATH"
 
-# Wait until X socket and runtime dir exist
-for i in $(seq 1 20); do
-    if [ -S /tmp/.X11-unix/X0 ] && [ -d "$XDG_RUNTIME_DIR" ]; then
-        break
-    fi
-    sleep 1
-done
+# Quick check for X socket and runtime dir
+if [ ! -S /tmp/.X11-unix/X0 ] || [ ! -d "$XDG_RUNTIME_DIR" ]; then
+    echo "   ⚠️  X socket or runtime dir not ready, continuing anyway..."
+fi
 
 exec python3 client.py --server "$CLIENT1_SERVER_URL" --hostname "$CLIENT1_HOSTNAME" --display-name "$CLIENT1_DISPLAY_NAME" --monitor 3

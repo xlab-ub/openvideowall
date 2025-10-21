@@ -1349,15 +1349,14 @@ Note: Make sure the client window has focus for hotkeys to work.
             self._ensure_window_visible()
             
             # Position window on the correct monitor after ensuring visibility
-            # But only if we're not already on the correct monitor
-            threading.Timer(2.0, self._position_window_on_monitor).start()
-            threading.Timer(6.0, self._position_window_on_monitor).start()
+            # Only try once, and only if needed
+            threading.Timer(5.0, self._position_window_on_monitor).start()
             
             # Start fallback monitoring after initial positioning
             threading.Timer(15.0, self._start_fallback_monitor).start()
             
-            # Start periodic fullscreen enforcement (single timer)
-            threading.Timer(3.0, self._enforce_fullscreen_periodic).start()
+            # Disable periodic fullscreen enforcement - let ffplay handle it
+            # threading.Timer(3.0, self._enforce_fullscreen_periodic).start()
             
             # Continuous window positioning monitor disabled to prevent repositioning
             # self._start_window_positioning_monitor()
