@@ -1257,5 +1257,46 @@ export const api = {
   group: groupApi,
   client: clientApi,
   video: videoApi,
-  system: systemApi
+  system: systemApi,
+
+  // ===================================
+  // CLIENT MANAGEMENT
+  // ===================================
+
+  async unassignClient(clientId: string, unassignType: 'all' | 'stream' | 'screen' = 'all') {
+    console.log(`Unassigning client ${clientId} (type: ${unassignType})`);
+    
+    const response = await fetch(`${API_BASE_URL}/api/clients/unassign_client`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: clientId,
+        unassign_type: unassignType
+      }),
+    });
+
+    const result = await handleApiResponse(response, 'POST /api/clients/unassign_client');
+    console.log(`Client unassigned successfully:`, result);
+    return result;
+  },
+
+  async removeClient(clientId: string) {
+    console.log(`Removing client ${clientId}`);
+    
+    const response = await fetch(`${API_BASE_URL}/api/clients/remove_client`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: clientId
+      }),
+    });
+
+    const result = await handleApiResponse(response, 'POST /api/clients/remove_client');
+    console.log(`Client removed successfully:`, result);
+    return result;
+  }
 };

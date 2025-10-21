@@ -96,6 +96,117 @@ const ClientsTab = () => {
     setClients(newClients);
   };
 
+  const unassignClient = async (clientId: string) => {
+    try {
+      console.log(`Unassigning client ${clientId}`);
+      
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/api/clients/unassign_client`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          client_id: clientId,
+          unassign_type: 'all'  // Unassign from everything
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Unassign successful:', result);
+        
+        showError({
+          message: `Client ${clientId} unassigned successfully`,
+          error_code: 'CLIENT_UNASSIGNED',
+          error_category: '2xx',
+          context: {
+            component: 'ClientsTab',
+            operation: 'unassignClient',
+            client_id: clientId,
+            timestamp: new Date().toISOString()
+          }
+        });
+        
+        // Refresh the client list
+        loadClients();
+      } else {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to unassign client');
+      }
+    } catch (error: any) {
+      console.error('Error unassigning client:', error);
+      showError({
+        message: `Failed to unassign client: ${error.message}`,
+        error_code: 'CLIENT_UNASSIGN_FAILED',
+        error_category: '5xx',
+        context: {
+          component: 'ClientsTab',
+          operation: 'unassignClient',
+          client_id: clientId,
+          timestamp: new Date().toISOString(),
+          original_error: error?.message
+        }
+      });
+    }
+  };
+
+  const removeClient = async (clientId: string) => {
+    if (!confirm(`Are you sure you want to remove client ${clientId}? This will permanently delete the client from the system.`)) {
+      return;
+    }
+
+    try {
+      console.log(`Removing client ${clientId}`);
+      
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000'}/api/clients/remove_client`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          client_id: clientId
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log('Remove successful:', result);
+        
+        showError({
+          message: `Client ${clientId} removed successfully`,
+          error_code: 'CLIENT_REMOVED',
+          error_category: '2xx',
+          context: {
+            component: 'ClientsTab',
+            operation: 'removeClient',
+            client_id: clientId,
+            timestamp: new Date().toISOString()
+          }
+        });
+        
+        // Refresh the client list
+        loadClients();
+      } else {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to remove client');
+      }
+    } catch (error: any) {
+      console.error('Error removing client:', error);
+      showError({
+        message: `Failed to remove client: ${error.message}`,
+        error_code: 'CLIENT_REMOVE_FAILED',
+        error_category: '5xx',
+        context: {
+          component: 'ClientsTab',
+          operation: 'removeClient',
+          client_id: clientId,
+          timestamp: new Date().toISOString(),
+          original_error: error?.message
+        }
+      });
+    }
+  };
+
   const filteredClients = clients.filter(client => {
     if (!searchTerm) return true;
 
@@ -275,6 +386,30 @@ const ClientsTab = () => {
                       className="p-2"
                     >
                       <ArrowDown className="w-4 h-4" />
+                    </Button>
+
+                    {/* Unassign button - only show if client has assignments */}
+                    {(client.group_id || client.assignment_status !== 'waiting_for_assignment') && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => unassignClient(client.client_id)}
+                        className="p-2 text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                        title="Unassign from group/screen"
+                      >
+                        Unassign
+                      </Button>
+                    )}
+
+                    {/* Remove button */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => removeClient(client.client_id)}
+                      className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                      title="Remove client completely"
+                    >
+                      Remove
                     </Button>
                   </div>
                 </div>
