@@ -1238,6 +1238,26 @@ Note: Make sure the client window has focus for hotkeys to work.
         except Exception as e:
             self.logger.debug(f"Could not force window visible: {e}")
 
+    def _get_monitor_resolution(self, monitor_index):
+        """Get the resolution of the specified monitor."""
+        try:
+            result = subprocess.run(['xrandr', '--current'], capture_output=True, text=True)
+            if result.returncode == 0:
+                lines = result.stdout.split('\n')
+                for line in lines:
+                    if ' connected' in line and not 'disconnected' in line:
+                        # Extract resolution from line like "HDMI-1 connected 1920x1080+0+0"
+                        parts = line.split()
+                        for part in parts:
+                            if 'x' in part and '+' in part:
+                                res = part.split('+')[0]
+                                if 'x' in res:
+                                    w, h = res.split('x')
+                                    return int(w), int(h)
+            return 1920, 1080  # Default fallback
+        except:
+            return 1920, 1080
+
     def _enforce_fullscreen_periodic(self):
         """Periodically enforce fullscreen mode only if needed."""
         try:
@@ -1247,6 +1267,9 @@ Note: Make sure the client window has focus for hotkeys to work.
             pid_windows = self._find_player_window_ids()
             if pid_windows:
                 needs_fix = False
+                target_x, target_y = self.monitor_positions[self.current_monitor]
+                target_w, target_h = self._get_monitor_resolution(self.current_monitor)
+                
                 for wid in pid_windows:
                     # Check current window state first
                     result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
@@ -1256,17 +1279,15 @@ Note: Make sure the client window has focus for hotkeys to work.
                                 parts = line.split()
                                 if len(parts) >= 6:
                                     x, y, w, h = int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5])
-                                    # Check if window is positioned correctly and fullscreen
-                                    target_x, target_y = self.monitor_positions[self.current_monitor]
                                     
                                     # Check if positioned correctly (within 100px tolerance)
                                     positioned_ok = abs(x - target_x) < 100 and abs(y - target_y) < 100
-                                    # Check if fullscreen (large enough)
-                                    fullscreen_ok = w >= 1900 and h >= 1000
+                                    # Check if fullscreen with correct resolution
+                                    fullscreen_ok = w >= target_w - 50 and h >= target_h - 50
                                     
                                     if not positioned_ok or not fullscreen_ok:
                                         needs_fix = True
-                                        print(f"   🔧 Window needs fix: pos_ok={positioned_ok}, fs_ok={fullscreen_ok}")
+                                        print(f"   🔧 Window needs fix: pos_ok={positioned_ok}, fs_ok={fullscreen_ok} (current: {w}x{h}, target: {target_w}x{target_h})")
                                         
                                         # Fix positioning if needed
                                         if not positioned_ok:
@@ -1276,7 +1297,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                                         if not fullscreen_ok:
                                             subprocess.run(['xdotool', 'windowactivate', '--sync', wid, 'key', 'f'], capture_output=True)
                                     else:
-                                        print(f"   ✅ Window is correctly positioned and fullscreen")
+                                        print(f"   ✅ Window is correctly positioned and fullscreen ({w}x{h})")
                                     break
                 
                 # Only schedule next check if we needed to fix something
@@ -1296,14 +1317,18 @@ Note: Make sure the client window has focus for hotkeys to work.
             print(f"   Stream Version: {self.current_stream_version}")
             print(f"   Capability: Standard video playback")
             
-            # Force SDL to create a window immediately
+            # Force SDL to create a window immediately with proper resolution
             env = os.environ.copy()
             env['SDL_VIDEODRIVER'] = 'x11'  # Force X11 even on Wayland for window control
             env['DISPLAY'] = env.get('DISPLAY', ':0')
+            env['SDL_VIDEO_WINDOW_POS'] = '0,0'  # Force window position
+            env['SDL_VIDEO_CENTERED'] = '0'  # Don't center window
             
             cmd = [
                 "ffplay",
                 "-fs",  # Always start fullscreen
+                "-x", "1920",  # Force width
+                "-y", "1080",  # Force height
                 "-fflags", "nobuffer",
                 "-flags", "low_delay", 
                 "-framedrop",
