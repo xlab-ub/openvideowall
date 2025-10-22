@@ -660,8 +660,8 @@ def wait_for_assignment():
                     logger.warning("Could not import streaming modules to get active stream IDs")
                     current_stream_ids = {}
             
-            # If no stream URL yet, or if we have new stream IDs, rebuild it
-            if not stream_url or current_stream_ids:
+            # Always check for stream URL updates to ensure we have the correct stream ID
+            if not stream_url or current_stream_ids or True:  # Always rebuild to get latest stream ID
                 if assignment_status == "screen_assigned":
                     # For screen assignment, use the correct stream ID format that matches FFmpeg
                     screen_number = client.get("screen_number", 0)
