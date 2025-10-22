@@ -96,11 +96,13 @@ const VideoConfigurationSection: React.FC<VideoConfigurationSectionProps> = ({
                       <SelectItem value="__CLEAR__">
                         <span className="text-gray-400">Clear assignment</span>
                       </SelectItem>
-                      {videos.map((video) => (
-                        <SelectItem key={video.name} value={video.name}>
-                          {video.name}
-                        </SelectItem>
-                      ))}
+                      {videos
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                        .map((video) => (
+                          <SelectItem key={video.name} value={video.name}>
+                            {video.name}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
