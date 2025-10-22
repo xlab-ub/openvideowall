@@ -392,6 +392,34 @@ class UnifiedMultiScreenClient:
             self.logger.warning(f"Could not check monitor availability: {e}")
             return True  # Assume available if check fails
     
+    def _is_single_monitor_setup(self) -> bool:
+        """Check if this is a single monitor setup to avoid aggressive positioning"""
+        try:
+            # Use xrandr to list monitors
+            result = subprocess.run(['xrandr', '--listmonitors'], capture_output=True, text=True, env={'DISPLAY': ':0'})
+            if result.returncode != 0:
+                # If xrandr fails, assume single monitor to be safe
+                return True
+            
+            # Parse monitor count from xrandr output
+            lines = result.stdout.strip().split('\n')
+            if len(lines) <= 1:  # Only header line
+                return True  # No monitors detected, assume single
+            
+            monitor_count = len(lines) - 1  # Subtract header line
+            is_single = monitor_count <= 1
+            
+            if is_single:
+                self.logger.info(f"Single monitor setup detected ({monitor_count} monitor(s))")
+            else:
+                self.logger.info(f"Multi-monitor setup detected ({monitor_count} monitors)")
+            
+            return is_single
+            
+        except Exception as e:
+            self.logger.warning(f"Monitor count check failed: {e}, assuming single monitor")
+            return True  # Assume single monitor if check fails
+    
     def _auto_assign_monitor(self) -> int:
         """Automatically assign a monitor based on hostname and availability"""
         # Try to assign monitor based on hostname pattern
@@ -541,6 +569,40 @@ class UnifiedMultiScreenClient:
         prev_monitor = (self.current_monitor - 1) % len(self.monitor_positions)
         self.move_to_monitor(prev_monitor)
     
+    def _gentle_position_window(self):
+        """Gentle window positioning for single monitor setups"""
+        try:
+            print(f"   🎯 Gentle positioning for single monitor setup")
+            
+            # Wait for window to appear
+            time.sleep(2)
+            
+            # Find the player window
+            window_ids = self._find_player_window_ids()
+            if not window_ids:
+                print(f"   ⚠️ No player window found for gentle positioning")
+                return
+            
+            # Use the first window ID found
+            wid = window_ids[0] if isinstance(window_ids, list) else window_ids
+            
+            # For single monitor, just ensure it's fullscreen without aggressive positioning
+            print(f"   🖥️ Ensuring fullscreen mode for single monitor")
+            
+            # Remove any existing states
+            subprocess.run(['wmctrl', '-ir', wid, '-b', 'remove,maximized_vert,maximized_horz,fullscreen'], 
+                         check=False, capture_output=True, env={'DISPLAY': ':0'})
+            time.sleep(0.5)
+            
+            # Set fullscreen
+            subprocess.run(['wmctrl', '-ir', wid, '-b', 'add,fullscreen'], 
+                         check=False, capture_output=True, env={'DISPLAY': ':0'})
+            
+            print(f"   ✅ Gentle positioning completed")
+            
+        except Exception as e:
+            self.logger.warning(f"Gentle positioning failed: {e}")
+    
     def _is_monitor_occupied(self, x, y):
         """Check if another client is already positioned on this monitor"""
         try:
@@ -573,6 +635,12 @@ class UnifiedMultiScreenClient:
         """Position the video window on the correct monitor after it starts"""
         if not self.player_process or self.player_process.poll() is not None:
             print(f"   Skipping window positioning - player not running")
+            return
+        
+        # For single monitor setups, use gentler positioning
+        if self._is_single_monitor_setup():
+            print(f"   🎯 Single monitor setup - using gentle positioning")
+            self._gentle_position_window()
             return
         
         try:
@@ -802,6 +870,11 @@ class UnifiedMultiScreenClient:
     def _start_fallback_monitor(self):
         """Start the fallback monitoring thread"""
         if self.fallback_monitor_thread and self.fallback_monitor_thread.is_alive():
+            return
+        
+        # Check if we're in single monitor mode
+        if self._is_single_monitor_setup():
+            self.logger.info("Single monitor setup detected - skipping aggressive positioning monitoring")
             return
             
         def fallback_monitor():
@@ -1773,9 +1846,14 @@ Note: Make sure the client window has focus for hotkeys to work.
             self.logger.info(f"C++ Player started for SEI stream")
             
             # Position window on the correct monitor gently
-            threading.Timer(1.0, self._position_window_on_monitor).start()   # First attempt
-            threading.Timer(3.0, self._position_window_on_monitor).start()   # Second attempt
-            threading.Timer(5.0, self._position_window_on_monitor).start()   # Final attempt
+            if self._is_single_monitor_setup():
+                # Single monitor: just one gentle positioning attempt
+                threading.Timer(2.0, self._position_window_on_monitor).start()
+            else:
+                # Multi-monitor: multiple attempts for proper positioning
+                threading.Timer(1.0, self._position_window_on_monitor).start()   # First attempt
+                threading.Timer(3.0, self._position_window_on_monitor).start()   # Second attempt
+                threading.Timer(5.0, self._position_window_on_monitor).start()   # Final attempt
             
             # Start gentle fallback monitoring after initial positioning
             threading.Timer(5.0, self._start_fallback_monitor).start()
@@ -1997,12 +2075,18 @@ Note: Make sure the client window has focus for hotkeys to work.
             self._ensure_window_visible()
             
             # Position window on the correct monitor gently
-            threading.Timer(1.0, self._position_window_on_monitor).start()   # First attempt
-            threading.Timer(3.0, self._position_window_on_monitor).start()   # Second attempt
-            threading.Timer(5.0, self._position_window_on_monitor).start()   # Final attempt
-            
-            # Force fullscreen after positioning
-            threading.Timer(3.0, self._force_immediate_fullscreen).start()
+            if self._is_single_monitor_setup():
+                # Single monitor: just one gentle positioning attempt
+                threading.Timer(2.0, self._position_window_on_monitor).start()
+                # Single monitor: gentler fullscreen enforcement
+                threading.Timer(4.0, self._force_immediate_fullscreen).start()
+            else:
+                # Multi-monitor: multiple attempts for proper positioning
+                threading.Timer(1.0, self._position_window_on_monitor).start()   # First attempt
+                threading.Timer(3.0, self._position_window_on_monitor).start()   # Second attempt
+                threading.Timer(5.0, self._position_window_on_monitor).start()   # Final attempt
+                # Force fullscreen after positioning
+                threading.Timer(3.0, self._force_immediate_fullscreen).start()
             
             # Start gentle fallback monitoring after initial positioning
             threading.Timer(5.0, self._start_fallback_monitor).start()
