@@ -60,13 +60,15 @@ class UnifiedMultiScreenClient:
         self.assigned_monitor_x = None
         self.assigned_monitor_y = None
         
-        # Fallback monitoring
+        # Aggressive positioning monitoring
         self.last_correct_position_time = time.time()
-        self.position_check_interval = 60  # Check every 60 seconds
-        self.max_wrong_position_time = 120  # Reposition if wrong for 120 seconds
+        self.position_check_interval_initial = 1  # Check every 1 second for first minute
+        self.position_check_interval_normal = 60  # Check every 60 seconds after first minute
+        self.initial_positioning_duration = 60  # First minute of aggressive checking
+        self.max_wrong_position_time = 5  # Reposition immediately if wrong for 5 seconds
         self.fallback_monitor_thread = None
         self.last_fullscreen_attempt = 0
-        self.fullscreen_cooldown = 30  # Don't try fullscreen more than once every 30 seconds
+        self.fullscreen_cooldown = 10  # Reduced cooldown for more responsive fullscreen
         
         # Configure logging first
         logging.basicConfig(
@@ -669,10 +671,24 @@ class UnifiedMultiScreenClient:
             return
             
         def fallback_monitor():
-            """Continuously monitor window position and reposition if needed"""
+            """Aggressively monitor window position and reposition if needed"""
+            start_time = time.time()
+            
             while self.running and not self._shutdown_event.is_set():
                 try:
-                    time.sleep(self.position_check_interval)
+                    # Determine check interval based on time since start
+                    elapsed_time = time.time() - start_time
+                    
+                    if elapsed_time < self.initial_positioning_duration:
+                        # First minute: check every 1 second
+                        check_interval = self.position_check_interval_initial
+                        phase = "INITIAL"
+                    else:
+                        # After first minute: check every 60 seconds
+                        check_interval = self.position_check_interval_normal
+                        phase = "NORMAL"
+                    
+                    time.sleep(check_interval)
                     
                     if not self.player_process or self.player_process.poll() is not None:
                         continue
@@ -680,28 +696,32 @@ class UnifiedMultiScreenClient:
                     # Check if window is in correct position
                     if self._is_window_in_correct_position():
                         self.last_correct_position_time = time.time()
-                        self.logger.debug("Window position check: ✅ Correct position")
+                        self.logger.debug(f"Window position check ({phase}): ✅ Correct position")
                     else:
                         wrong_position_time = time.time() - self.last_correct_position_time
-                        self.logger.warning(f"Window position check: ❌ Wrong position for {wrong_position_time:.1f}s")
+                        self.logger.warning(f"Window position check ({phase}): ❌ Wrong position for {wrong_position_time:.1f}s")
                         
-                        if wrong_position_time >= self.max_wrong_position_time:
-                            self.logger.warning(f"🔄 FALLBACK: Repositioning window after {wrong_position_time:.1f}s in wrong position")
-                            self._emergency_reposition()
-                            self.last_correct_position_time = time.time()
+                        # Immediate repositioning - don't wait
+                        self.logger.warning(f"🔄 AGGRESSIVE REPOSITIONING: Fixing window position immediately")
+                        self._emergency_reposition()
+                        self.last_correct_position_time = time.time()
                             
                 except Exception as e:
                     self.logger.error(f"Fallback monitor error: {e}")
-                    time.sleep(10)  # Wait longer on error
+                    time.sleep(5)  # Shorter wait on error
         
         self.fallback_monitor_thread = threading.Thread(target=fallback_monitor, daemon=True)
         self.fallback_monitor_thread.start()
-        self.logger.info("Fallback monitor started (checks every 60s, repositions after 120s)")
+        self.logger.info("Aggressive positioning monitor started (1s checks for first minute, then 60s checks, immediate repositioning)")
     
     def _is_window_in_correct_position(self):
         """Check if the window is in the correct position"""
         try:
-            x, y = self.monitor_positions[self.current_monitor]
+            # Use assigned monitor position if available, otherwise use default
+            if self.assigned_monitor_x is not None and self.assigned_monitor_y is not None:
+                x, y = self.assigned_monitor_x, self.assigned_monitor_y
+            else:
+                x, y = self.monitor_positions[self.current_monitor]
             
             # Get list of windows
             result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True, env={'DISPLAY': ':0'})
@@ -719,7 +739,7 @@ class UnifiedMultiScreenClient:
                         window_y = int(parts[3])
                         
                         # Check if position is correct (with tolerance)
-                        if abs(window_x - x) <= 200 and abs(window_y - y) <= 200:
+                        if abs(window_x - x) <= 100 and abs(window_y - y) <= 100:
                             return True
             return False
             
@@ -1568,13 +1588,15 @@ Note: Make sure the client window has focus for hotkeys to work.
             print(f"   Status: Playing with SEI processing")
             self.logger.info(f"C++ Player started for SEI stream")
             
-            # Position window on the correct monitor immediately but less aggressively
-            threading.Timer(1.0, self._position_window_on_monitor).start()   # First attempt
-            threading.Timer(3.0, self._position_window_on_monitor).start()   # Second attempt
-            threading.Timer(5.0, self._position_window_on_monitor).start()   # Final attempt
+            # Position window on the correct monitor aggressively
+            threading.Timer(0.5, self._position_window_on_monitor).start()   # Immediate attempt
+            threading.Timer(1.0, self._position_window_on_monitor).start()   # First retry
+            threading.Timer(2.0, self._position_window_on_monitor).start()   # Second retry
+            threading.Timer(3.0, self._position_window_on_monitor).start()   # Third retry
+            threading.Timer(5.0, self._position_window_on_monitor).start()   # Fourth retry
             
-            # Start fallback monitoring after initial positioning
-            threading.Timer(15.0, self._start_fallback_monitor).start()
+            # Start aggressive fallback monitoring immediately
+            threading.Timer(2.0, self._start_fallback_monitor).start()
             
             # Continuous window positioning monitor disabled to prevent repositioning
             # self._start_window_positioning_monitor()
@@ -1792,16 +1814,18 @@ Note: Make sure the client window has focus for hotkeys to work.
             time.sleep(1)
             self._ensure_window_visible()
             
-            # Position window on the correct monitor immediately but less aggressively
-            threading.Timer(1.0, self._position_window_on_monitor).start()   # First attempt
-            threading.Timer(3.0, self._position_window_on_monitor).start()   # Second attempt
-            threading.Timer(5.0, self._position_window_on_monitor).start()   # Final attempt
+            # Position window on the correct monitor aggressively
+            threading.Timer(0.5, self._position_window_on_monitor).start()   # Immediate attempt
+            threading.Timer(1.0, self._position_window_on_monitor).start()   # First retry
+            threading.Timer(2.0, self._position_window_on_monitor).start()   # Second retry
+            threading.Timer(3.0, self._position_window_on_monitor).start()   # Third retry
+            threading.Timer(5.0, self._position_window_on_monitor).start()   # Fourth retry
             
             # Force fullscreen after positioning
-            threading.Timer(3.0, self._force_immediate_fullscreen).start()
+            threading.Timer(2.0, self._force_immediate_fullscreen).start()
             
-            # Start fallback monitoring after initial positioning
-            threading.Timer(15.0, self._start_fallback_monitor).start()
+            # Start aggressive fallback monitoring immediately
+            threading.Timer(2.0, self._start_fallback_monitor).start()
             
             # Enable periodic fullscreen enforcement to ensure windows stay fullscreen
             threading.Timer(3.0, self._enforce_fullscreen_periodic).start()
