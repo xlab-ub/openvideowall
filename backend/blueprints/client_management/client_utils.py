@@ -22,6 +22,79 @@ def format_time_ago(timestamp: float) -> str:
     else:
         return f"{int(seconds_ago / 86400)} days ago"
 
+def extract_ffmpeg_stream_ids(group_id: str, group_name: str, screen_count: int) -> Dict[str, str]:
+    """Extract actual stream IDs from running FFmpeg process for a group"""
+    try:
+        import subprocess
+        import re
+        
+        logger.info(f"Extracting FFmpeg stream IDs for group {group_name}")
+        
+        # Find FFmpeg process for this group
+        result = subprocess.run(
+            ["ps", "aux"], 
+            capture_output=True, 
+            text=True, 
+            timeout=10
+        )
+        
+        if result.returncode != 0:
+            logger.error(f"Failed to get process list: {result.stderr}")
+            return {}
+        
+        # Look for FFmpeg processes with our group name
+        ffmpeg_lines = []
+        for line in result.stdout.split('\n'):
+            if 'ffmpeg' in line and group_name in line and 'srt://' in line:
+                ffmpeg_lines.append(line)
+        
+        if not ffmpeg_lines:
+            logger.warning(f"No FFmpeg process found for group {group_name}")
+            return {}
+        
+        # Extract stream IDs from the first FFmpeg command
+        ffmpeg_cmd = ffmpeg_lines[0]
+        logger.info(f"Found FFmpeg command: {ffmpeg_cmd}")
+        
+        # Pattern to match streamid=#!::r=live/group/stream_id
+        stream_pattern = r'streamid=#!::r=live/[^/]+/([a-f0-9_]+)'
+        stream_matches = re.findall(stream_pattern, ffmpeg_cmd)
+        
+        if not stream_matches:
+            logger.warning(f"No stream IDs found in FFmpeg command")
+            return {}
+        
+        # Parse the stream IDs
+        stream_ids = {}
+        base_stream_id = None
+        
+        for match in stream_matches:
+            if '_' in match:
+                # Individual screen stream (e.g., f52ab654_0)
+                parts = match.split('_')
+                if len(parts) == 2:
+                    base_id = parts[0]
+                    screen_num = parts[1]
+                    stream_ids[f"test{screen_num}"] = match
+                    if base_stream_id is None:
+                        base_stream_id = base_id
+            else:
+                # Combined stream (e.g., f52ab654)
+                stream_ids["test"] = match
+                if base_stream_id is None:
+                    base_stream_id = match
+        
+        # Ensure we have the base stream ID
+        if base_stream_id:
+            stream_ids["base"] = base_stream_id
+        
+        logger.info(f"Extracted stream IDs: {stream_ids}")
+        return stream_ids
+        
+    except Exception as e:
+        logger.error(f"Error extracting FFmpeg stream IDs: {e}")
+        return {}
+
 def validate_stream_assignment(client: Dict[str, Any], stream_id: str, stream_url: str, group_name: str) -> Dict[str, Any]:
     """Validate stream assignment for consistency and correctness"""
     validation = {
@@ -111,25 +184,37 @@ def build_stream_url(group: Dict[str, Any], stream_id: str, group_name: str, srt
     logger.info(f" Building stream URL for stream_id: {stream_id}, group: {group_name}")
     logger.info(f" Group ports: {ports}")
     
-    # Try to get active stream IDs first
+    # Try to get actual FFmpeg stream IDs first
     try:
-        try:
-            from blueprints.streaming.split_stream import get_active_stream_ids
-        except ImportError:
-            try:
-                from blueprints.streaming.multi_stream import get_active_stream_ids
-            except ImportError:
-                # Fallback function if import fails
-                def get_active_stream_ids(group_id: str):
-                    """Get active stream IDs for a group"""
-                    return {}
-        active_stream_ids = get_active_stream_ids(group.get("id", "unknown"))
-        if active_stream_ids:
-            logger.info(f" Found active stream IDs: {active_stream_ids}")
-            actual_stream_ids = active_stream_ids
+        group_id = group.get("id", "unknown")
+        group_name = group.get("name", "unknown")
+        screen_count = group.get("screen_count", 2)
+        
+        # Extract actual stream IDs from running FFmpeg process
+        ffmpeg_stream_ids = extract_ffmpeg_stream_ids(group_id, group_name, screen_count)
+        if ffmpeg_stream_ids:
+            logger.info(f" Found actual FFmpeg stream IDs: {ffmpeg_stream_ids}")
+            actual_stream_ids = ffmpeg_stream_ids
         else:
-            logger.info(f" No active stream IDs found, trying group metadata")
-            actual_stream_ids = group.get("stream_ids", {})
+            logger.info(f" No FFmpeg stream IDs found, trying fallback methods")
+            # Fallback to other methods
+            try:
+                from blueprints.streaming.split_stream import get_active_stream_ids
+            except ImportError:
+                try:
+                    from blueprints.streaming.multi_stream import get_active_stream_ids
+                except ImportError:
+                    # Fallback function if import fails
+                    def get_active_stream_ids(group_id: str):
+                        """Get active stream IDs for a group"""
+                        return {}
+            active_stream_ids = get_active_stream_ids(group_id)
+            if active_stream_ids:
+                logger.info(f" Found active stream IDs: {active_stream_ids}")
+                actual_stream_ids = active_stream_ids
+            else:
+                logger.info(f" No active stream IDs found, trying group metadata")
+                actual_stream_ids = group.get("stream_ids", {})
     except Exception as e:
         logger.warning(f"Could not get active stream IDs: {e}")
         actual_stream_ids = group.get("stream_ids", {})
@@ -142,44 +227,52 @@ def build_stream_url(group: Dict[str, Any], stream_id: str, group_name: str, srt
         screen_key = f"test{screen_num}"
         
         if screen_key in actual_stream_ids:
-            # Use the actual stream ID from active streaming or group metadata
+            # Use the actual stream ID from FFmpeg process
             actual_stream_id = actual_stream_ids[screen_key]
-            logger.info(f" Using actual stream ID for screen {screen_num}: {actual_stream_id}")
+            logger.info(f" Using actual FFmpeg stream ID for screen {screen_num}: {actual_stream_id}")
         else:
-            # Fallback: try to generate stream IDs if not available
-            try:
+            # Fallback: try to construct from base stream ID
+            base_stream_id = actual_stream_ids.get("base")
+            if base_stream_id:
+                actual_stream_id = f"{base_stream_id}_{screen_num}"
+                logger.info(f" Constructed stream ID from base: {actual_stream_id}")
+            else:
+                # Last fallback: try to generate stream IDs if not available
                 try:
-                    from blueprints.streaming.split_stream import generate_stream_ids
-                except ImportError:
                     try:
-                        from blueprints.streaming.multi_stream import generate_stream_ids
+                        from blueprints.streaming.split_stream import generate_stream_ids
                     except ImportError:
-                        # Fallback function if import fails
-                        def generate_stream_ids(base_stream_id: str, group_name: str, screen_count: int):
-                            """Generate stream IDs for a group"""
-                            stream_ids = {}
-                            
-                            # Combined stream ID
-                            stream_ids["test"] = f"{base_stream_id[:8]}"
+                        try:
+                            from blueprints.streaming.multi_stream import generate_stream_ids
+                        except ImportError:
+                            # Fallback function if import fails
+                            def generate_stream_ids(base_stream_id: str, group_name: str, screen_count: int):
+                                """Generate stream IDs for a group"""
+                                stream_ids = {}
+                                
+                                # Combined stream ID
+                                stream_ids["test"] = f"{base_stream_id[:8]}"
                             
                             # Individual screen stream IDs
                             for i in range(screen_count):
                                 stream_ids[f"test{i}"] = f"{base_stream_id[:8]}_{i}"
                             
                             return stream_ids
-                screen_count = group.get("screen_count", 2)
-                fallback_ids = generate_stream_ids(group.get("id", "unknown"), group_name, screen_count)
-                if screen_key in fallback_ids:
-                    actual_stream_id = fallback_ids[screen_key]
-                    logger.info(f" Using generated stream ID for screen {screen_num}: {actual_stream_id}")
-                else:
-                    # Last resort: use a predictable fallback
+                        
+                        screen_count = group.get("screen_count", 2)
+                        fallback_ids = generate_stream_ids(group.get("id", "unknown"), group_name, screen_count)
+                        
+                        if screen_key in fallback_ids:
+                            actual_stream_id = fallback_ids[screen_key]
+                            logger.info(f" Using generated stream ID for screen {screen_num}: {actual_stream_id}")
+                        else:
+                            # Last resort: use a predictable fallback
+                            actual_stream_id = f"screen{screen_num}_{group_name}"
+                            logger.warning(f" Using fallback stream ID for screen {screen_num}: {actual_stream_id}")
+                except Exception as e:
+                    logger.error(f"Error generating fallback stream IDs: {e}")
                     actual_stream_id = f"screen{screen_num}_{group_name}"
-                    logger.warning(f" Using fallback stream ID for screen {screen_num}: {actual_stream_id}")
-            except Exception as e:
-                logger.error(f"Error generating fallback stream IDs: {e}")
-                actual_stream_id = f"screen{screen_num}_{group_name}"
-                logger.warning(f" Using emergency fallback stream ID: {actual_stream_id}")
+                    logger.warning(f" Using emergency fallback stream ID: {actual_stream_id}")
     else:
         # For direct stream assignments, use the stream_id as is
         actual_stream_id = stream_id
