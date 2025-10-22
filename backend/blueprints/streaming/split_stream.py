@@ -614,6 +614,14 @@ def start_split_screen_srt():
         logger.info(f"Streaming: {'Yes' if streaming_detected else 'No'}")
         logger.info("="*60)
         
+        # Update client assignments with new stream IDs after restart
+        try:
+            from blueprints.client_management.client_endpoints import update_client_assignments_after_restart
+            logger.info("🔄 Updating client assignments after split-stream restart...")
+            update_client_assignments_after_restart(group_id, group_name)
+        except ImportError:
+            logger.warning("Could not update client assignments after split-stream restart")
+        
         return jsonify({
             "success": True,
             "message": f"Split-screen SRT streaming started for group '{group_name}'",

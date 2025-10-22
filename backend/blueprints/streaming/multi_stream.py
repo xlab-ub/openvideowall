@@ -493,10 +493,15 @@ def start_multi_video_srt():
         
         # Resolve stream URLs for clients
         try:
-            from blueprints.client_management.client_endpoints import resolve_stream_urls_for_group
+            from blueprints.client_management.client_endpoints import resolve_stream_urls_for_group, update_client_assignments_after_restart
             resolve_stream_urls_for_group(group_id, group_name)
+            
+            # Update client assignments with new stream IDs after restart
+            logger.info("🔄 Updating client assignments after streaming restart...")
+            update_client_assignments_after_restart(group_id, group_name)
+            
         except ImportError:
-            logger.warning("Could not resolve client stream URLs")
+            logger.warning("Could not resolve client stream URLs or update assignments")
         
         return jsonify({
             "success": True,

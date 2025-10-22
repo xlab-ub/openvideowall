@@ -123,7 +123,108 @@ def get_group_from_docker(group_id: str) -> Optional[Dict[str, Any]]:
         logger.error(f"Error getting group from Docker: {e}")
         return {}
 
-def check_streaming_status_for_group(group_id: str, group_name: str, container_id: str = None) -> bool:
+def update_client_assignments_after_restart(group_id: str, group_name: str):
+    """Update all client assignments for a group after streaming restart"""
+    try:
+        logger.info(f"🔄 UPDATING CLIENT ASSIGNMENTS AFTER RESTART for group {group_name}")
+        
+        # Get all clients assigned to this group
+        group_clients = []
+        if hasattr(state, 'clients'):
+            for client_id, client in state.clients.items():
+                if client.get("group_id") == group_id:
+                    group_clients.append((client_id, client))
+        
+        if not group_clients:
+            logger.info(f"No clients found for group {group_name}")
+            return
+        
+        logger.info(f"Found {len(group_clients)} clients assigned to group {group_name}")
+        
+        # Extract current FFmpeg stream IDs
+        screen_count = 4  # Default, could be made dynamic
+        ffmpeg_stream_ids = extract_ffmpeg_stream_ids(group_id, group_name, screen_count)
+        
+        if not ffmpeg_stream_ids:
+            logger.warning(f"No FFmpeg stream IDs found for group {group_name}")
+            return
+        
+        logger.info(f"Current FFmpeg stream IDs: {ffmpeg_stream_ids}")
+        
+        # Update each client's stream assignment
+        for client_id, client in group_clients:
+            try:
+                assignment_status = client.get("assignment_status")
+                screen_number = client.get("screen_number")
+                stream_assignment = client.get("stream_assignment")
+                
+                logger.info(f"Updating client {client_id}: status={assignment_status}, screen={screen_number}, stream={stream_assignment}")
+                
+                # Determine the correct stream ID based on assignment type
+                if assignment_status == "screen_assigned" and screen_number is not None:
+                    # Screen assignment - use screen-specific stream ID
+                    stream_key = f"test{screen_number}"
+                    actual_stream_id = ffmpeg_stream_ids.get(stream_key)
+                    
+                    if actual_stream_id:
+                        logger.info(f"  Screen {screen_number} -> Stream ID: {actual_stream_id}")
+                    else:
+                        # Fallback to base stream ID with screen number
+                        base_stream_id = ffmpeg_stream_ids.get("base")
+                        if base_stream_id:
+                            actual_stream_id = f"{base_stream_id}_{screen_number}"
+                            logger.info(f"  Fallback: Screen {screen_number} -> Stream ID: {actual_stream_id}")
+                        else:
+                            actual_stream_id = f"screen{screen_number}"
+                            logger.warning(f"  No FFmpeg stream ID found, using fallback: {actual_stream_id}")
+                
+                elif assignment_status == "stream_assigned" and stream_assignment:
+                    # Stream assignment - use the assigned stream
+                    actual_stream_id = ffmpeg_stream_ids.get(stream_assignment, stream_assignment)
+                    logger.info(f"  Stream assignment {stream_assignment} -> Stream ID: {actual_stream_id}")
+                
+                else:
+                    logger.warning(f"  Client {client_id} has unclear assignment, skipping")
+                    continue
+                
+                # Get group info for URL building
+                from group_management import get_group_by_id
+                group = get_group_by_id(group_id)
+                if not group:
+                    logger.error(f"Group {group_id} not found")
+                    continue
+                
+                # Get SRT IP
+                srt_ip = client.get("srt_ip", os.getenv("SRT_SERVER_IP", "127.0.0.1"))
+                
+                # Build new stream URL
+                stream_url = build_stream_url(group, actual_stream_id, group_name, srt_ip)
+                
+                # Update client with new stream information
+                client["stream_id"] = actual_stream_id
+                client["stream_url"] = stream_url
+                client["current_stream_ids"] = ffmpeg_stream_ids
+                
+                # Save updated client
+                if hasattr(state, 'add_client'):
+                    state.add_client(client_id, client)
+                else:
+                    state.clients[client_id] = client
+                
+                logger.info(f"✅ Updated client {client_id}:")
+                logger.info(f"   Stream ID: {actual_stream_id}")
+                logger.info(f"   Stream URL: {stream_url}")
+                
+            except Exception as e:
+                logger.error(f"Error updating client {client_id}: {e}")
+                continue
+        
+        logger.info(f"✅ COMPLETED: Updated {len(group_clients)} client assignments for group {group_name}")
+        
+    except Exception as e:
+        logger.error(f"Error updating client assignments after restart: {e}")
+
+
     """
     Check if streaming is active for a group
     Clean import strategy with fallback
