@@ -136,6 +136,13 @@ export const useVideoAssignments = (groupId: string, screenCount: number, onVide
       try {
         console.log(` Manual save triggered for group ${groupId}`);
         await restartWithCurrentState();
+        
+        // Keep popup open for a moment to show success
+        console.log(` ✅ Video changes saved and streaming restarted`);
+        
+        // Optional: Add a small delay to show success message
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
       } finally {
         setIsSaving(false);
       }
@@ -199,10 +206,39 @@ export const useVideoAssignments = (groupId: string, screenCount: number, onVide
       
       console.log(` ✅ Streaming restarted successfully for group ${groupId}`);
       
+      // Verify streaming is actually working by checking group status
+      await verifyStreamingStatus(groupId);
+      
     } catch (error) {
       console.error(` ❌ Error restarting streaming for group ${groupId}:`, error);
       // Show error to user
       alert(`Failed to restart streaming: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // Verify streaming status after restart
+  const verifyStreamingStatus = async (groupId: string) => {
+    try {
+      console.log(` 🔍 Verifying streaming status for group ${groupId}...`);
+      
+      // Wait a moment for streaming to initialize
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Check group status
+      const { api } = await import('../../../../API/api');
+      const groupsResponse = await api.group.getGroups();
+      const group = groupsResponse.groups.find((g: any) => g.id === groupId);
+      
+      if (group && group.is_streaming) {
+        console.log(` ✅ Streaming verification successful for group ${groupId}`);
+        return true;
+      } else {
+        console.warn(` ⚠️ Streaming verification failed for group ${groupId} - not streaming`);
+        return false;
+      }
+    } catch (error) {
+      console.error(` ❌ Error verifying streaming status for group ${groupId}:`, error);
+      return false;
     }
   };
 

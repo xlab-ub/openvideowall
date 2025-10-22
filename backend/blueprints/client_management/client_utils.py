@@ -22,6 +22,58 @@ def format_time_ago(timestamp: float) -> str:
     else:
         return f"{int(seconds_ago / 86400)} days ago"
 
+def validate_stream_assignment(client: Dict[str, Any], stream_id: str, stream_url: str, group_name: str) -> Dict[str, Any]:
+    """Validate stream assignment for consistency and correctness"""
+    validation = {
+        "is_valid": True,
+        "errors": [],
+        "warnings": []
+    }
+    
+    try:
+        # Validate stream ID is present
+        if not stream_id:
+            validation["is_valid"] = False
+            validation["errors"].append("No stream ID provided")
+        
+        # Validate stream URL is present and properly formatted
+        if not stream_url:
+            validation["is_valid"] = False
+            validation["errors"].append("No stream URL provided")
+        elif not stream_url.startswith("srt://"):
+            validation["warnings"].append("Stream URL doesn't use SRT protocol")
+        
+        # Validate group name consistency
+        if group_name and group_name not in stream_url:
+            validation["warnings"].append(f"Group name '{group_name}' not found in stream URL")
+        
+        # Validate stream ID consistency
+        if stream_id and stream_id not in stream_url:
+            validation["warnings"].append(f"Stream ID '{stream_id}' not found in stream URL")
+        
+        # Validate assignment type consistency
+        assignment_status = client.get("assignment_status")
+        if assignment_status == "stream_assigned":
+            if not client.get("stream_assignment"):
+                validation["warnings"].append("Stream assignment status but no stream assignment name")
+        elif assignment_status == "screen_assigned":
+            if client.get("screen_number") is None:
+                validation["warnings"].append("Screen assignment status but no screen number")
+        
+        # Validate group assignment
+        if not client.get("group_id"):
+            validation["is_valid"] = False
+            validation["errors"].append("Client not assigned to any group")
+        
+        logger.info(f"Stream assignment validation: valid={validation['is_valid']}, errors={len(validation['errors'])}, warnings={len(validation['warnings'])}")
+        
+    except Exception as e:
+        logger.error(f"Error validating stream assignment: {e}")
+        validation["is_valid"] = False
+        validation["errors"].append(f"Validation error: {str(e)}")
+    
+    return validation
+
 def get_next_steps(client_data: Dict[str, Any]) -> List[str]:
     """Get next steps for client based on current state"""
     assignment_status = client_data.get("assignment_status", "waiting_for_assignment")

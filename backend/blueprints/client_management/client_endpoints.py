@@ -449,7 +449,7 @@ def wait_for_assignment():
         logger.info("==== WAIT FOR ASSIGNMENT REQUEST ====")
         
         # Import utilities from the same module
-        from .client_utils import get_next_steps, build_stream_url
+        from .client_utils import get_next_steps, build_stream_url, validate_stream_assignment
         # DON'T import get_state from client_state - use the one at top of file
         
         data = request.get_json() or {}
@@ -696,8 +696,11 @@ def wait_for_assignment():
                 else:
                     state.clients[client_id] = client
             
-            # Return ready to play status
-            return jsonify({
+            # Enhanced validation before returning ready status
+            validation_result = validate_stream_assignment(client, actual_stream_id, stream_url, group_name)
+            
+            # Return ready to play status with validation info
+            response_data = {
                 "success": True,
                 "status": "ready_to_play",
                 "message": "Stream is ready",
@@ -708,8 +711,15 @@ def wait_for_assignment():
                 "stream_assignment": client.get("stream_assignment"),
                 "screen_number": client.get("screen_number"),
                 "assignment_status": assignment_status,
-                "stream_version": client.get("stream_version", None)
-            }), 200
+                "stream_version": client.get("stream_version", None),
+                "validation": validation_result
+            }
+            
+            if not validation_result["is_valid"]:
+                logger.warning(f"Stream assignment validation failed for client {client_id}: {validation_result['errors']}")
+                response_data["warnings"] = validation_result["errors"]
+            
+            return jsonify(response_data), 200
         
         # Unknown status
         logger.warning(f" Client {client_id} has unknown assignment status: {assignment_status}")
@@ -771,8 +781,47 @@ def client_heartbeat():
         server_stream_url = client.get("stream_url")
         server_stream_version = client.get("stream_version")
         
-        # Log stream status
+        # Enhanced stream validation
+        stream_validation = {
+            "is_valid": True,
+            "warnings": [],
+            "mismatches": []
+        }
+        
+        # Validate stream ID consistency
+        if current_stream_id and server_stream_id:
+            if current_stream_id != server_stream_id:
+                stream_validation["is_valid"] = False
+                stream_validation["mismatches"].append({
+                    "type": "stream_id",
+                    "client": current_stream_id,
+                    "server": server_stream_id
+                })
+                logger.warning(f"Client {client_id} stream ID mismatch: client={current_stream_id}, server={server_stream_id}")
+        
+        # Validate stream URL consistency
+        if current_stream_url and server_stream_url:
+            if current_stream_url != server_stream_url:
+                stream_validation["warnings"].append({
+                    "type": "stream_url",
+                    "client": current_stream_url,
+                    "server": server_stream_url
+                })
+                logger.warning(f"Client {client_id} stream URL mismatch: client={current_stream_url}, server={server_stream_url}")
+        
+        # Validate stream version consistency
+        if current_stream_version and server_stream_version:
+            if current_stream_version != server_stream_version:
+                stream_validation["warnings"].append({
+                    "type": "stream_version",
+                    "client": current_stream_version,
+                    "server": server_stream_version
+                })
+                logger.warning(f"Client {client_id} stream version mismatch: client={current_stream_version}, server={server_stream_version}")
+        
+        # Log stream status with validation results
         logger.info(f"Client {client_id} heartbeat - Current stream: {current_stream_id} -> Server stream: {server_stream_id}")
+        logger.info(f"Stream validation: valid={stream_validation['is_valid']}, warnings={len(stream_validation['warnings'])}, mismatches={len(stream_validation['mismatches'])}")
         
         # Save updated client data
         if hasattr(state, 'add_client'):
@@ -790,7 +839,8 @@ def client_heartbeat():
             "message": "Heartbeat received",
             "client_id": client_id,
             "timestamp": current_time,
-            "status": "active"
+            "status": "active",
+            "stream_validation": stream_validation
         }
         
         # Include current stream information if client has assignments
@@ -802,6 +852,12 @@ def client_heartbeat():
             response_data["stream_version"] = server_stream_version
         if client.get("assignment_status"):
             response_data["assignment_status"] = client["assignment_status"]
+        if client.get("group_name"):
+            response_data["group_name"] = client["group_name"]
+        if client.get("stream_assignment"):
+            response_data["stream_assignment"] = client["stream_assignment"]
+        if client.get("screen_number") is not None:
+            response_data["screen_number"] = client["screen_number"]
         
         return jsonify(response_data), 200
         
