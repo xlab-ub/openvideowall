@@ -136,7 +136,7 @@ export const useVideoAssignments = (groupId: string, screenCount: number, onVide
       console.log(` Restarting streaming with current video assignments for group ${groupId}`);
       
       // Import API here to avoid circular dependency
-      const { api } = await import('../../../API/api');
+      const { api } = await import('../../../../API/api');
       
       // Stop current streaming
       await api.group.stopGroup(groupId);

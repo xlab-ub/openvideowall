@@ -1657,49 +1657,92 @@ Note: Make sure the client window has focus for hotkeys to work.
                 elif not hasattr(self, 'last_url_check'):
                     self.last_url_check = current_time
                 
-                # Wait for stream assignment
-                if self.wait_for_assignment():
-                    if self._shutdown_event.is_set():
-                        break
-                        
-                    # Play the assigned stream
-                    if self.play_stream():
-                        # Monitor the player
-                        stop_reason = self.monitor_player()
-                        
-                        if stop_reason == 'user_exit':
-                            print(f" User requested exit")
+                # Only wait for assignment if we don't have a current stream
+                if not self.current_stream_url:
+                    # Wait for stream assignment
+                    if self.wait_for_assignment():
+                        if self._shutdown_event.is_set():
                             break
-                        elif stop_reason == 'stream_changed':
-                            print(f" Stream changed, restarting...")
-                            continue
-                        elif stop_reason in ['stream_ended', 'connection_lost', 'error']:
-                            print(f" Stream stopped ({stop_reason}), waiting for new assignment...")
-                            print(f" Client will stay connected and wait for new stream...")
-                            self.current_stream_url = None
-                            self.current_stream_version = None
-                            self.current_player_type = None
-                            # Clear any existing player process
-                            if self.player_process:
-                                self.player_process = None
-                            continue
+                            
+                        # Play the assigned stream
+                        if self.play_stream():
+                            # Monitor the player
+                            stop_reason = self.monitor_player()
+                            
+                            if stop_reason == 'user_exit':
+                                print(f" User requested exit")
+                                break
+                            elif stop_reason == 'stream_changed':
+                                print(f" Stream changed, restarting...")
+                                continue
+                            elif stop_reason in ['stream_ended', 'connection_lost', 'error']:
+                                print(f" Stream stopped ({stop_reason}), waiting for new assignment...")
+                                print(f" Client will stay connected and wait for new stream...")
+                                self.current_stream_url = None
+                                self.current_stream_version = None
+                                self.current_player_type = None
+                                # Clear any existing player process
+                                if self.player_process:
+                                    self.player_process = None
+                                continue
+                            else:
+                                print(f"  Unexpected stop reason: {stop_reason}")
+                                print(f"  Treating as stream end, will wait for new assignment...")
+                                self.current_stream_url = None
+                                self.current_stream_version = None
+                                self.current_player_type = None
+                                if self.player_process:
+                                    self.player_process = None
+                                continue
                         else:
-                            print(f"  Unexpected stop reason: {stop_reason}")
-                            print(f"  Treating as stream end, will wait for new assignment...")
-                            self.current_stream_url = None
-                            self.current_stream_version = None
-                            self.current_player_type = None
-                            if self.player_process:
-                                self.player_process = None
-                            continue
+                            print(f" Failed to start player, retrying in 10 seconds...")
+                            if self._shutdown_event.wait(timeout=10):
+                                break
                     else:
-                        print(f" Failed to start player, retrying in 10 seconds...")
+                        print(f" Assignment failed, retrying in 10 seconds...")
                         if self._shutdown_event.wait(timeout=10):
                             break
                 else:
-                    print(f" Assignment failed, retrying in 10 seconds...")
-                    if self._shutdown_event.wait(timeout=10):
-                        break
+                    # We have a stream URL, check if we need to play it
+                    if not self.player_process or self.player_process.poll() is not None:
+                        print(f" Stream URL available but player not running, starting player...")
+                        if self.play_stream():
+                            # Monitor the player
+                            stop_reason = self.monitor_player()
+                            
+                            if stop_reason == 'user_exit':
+                                print(f" User requested exit")
+                                break
+                            elif stop_reason == 'stream_changed':
+                                print(f" Stream changed, restarting...")
+                                continue
+                            elif stop_reason in ['stream_ended', 'connection_lost', 'error']:
+                                print(f" Stream stopped ({stop_reason}), waiting for new assignment...")
+                                print(f" Client will stay connected and wait for new stream...")
+                                self.current_stream_url = None
+                                self.current_stream_version = None
+                                self.current_player_type = None
+                                # Clear any existing player process
+                                if self.player_process:
+                                    self.player_process = None
+                                continue
+                            else:
+                                print(f"  Unexpected stop reason: {stop_reason}")
+                                print(f"  Treating as stream end, will wait for new assignment...")
+                                self.current_stream_url = None
+                                self.current_stream_version = None
+                                self.current_player_type = None
+                                if self.player_process:
+                                    self.player_process = None
+                                continue
+                        else:
+                            print(f" Failed to start player, retrying in 10 seconds...")
+                            if self._shutdown_event.wait(timeout=10):
+                                break
+                    else:
+                        # Player is running, just wait a bit before next iteration
+                        if self._shutdown_event.wait(timeout=1):
+                            break
                         
         except Exception as e:
             print(f" Fatal error: {e}")
