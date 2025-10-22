@@ -47,6 +47,9 @@ class UnifiedMultiScreenClient:
         self.force_ffplay = force_ffplay
         self.enable_hotkeys = enable_hotkeys
         
+        # Enhanced fullscreen mode for all platforms
+        self.fullscreen_mode = True
+        
         # Window management
         self.window_manager = None
         self.monitor_positions = [
@@ -191,6 +194,104 @@ class UnifiedMultiScreenClient:
             except Exception:
                 # Final fallback: use loopback IP
                 return "127.0.0.1"
+    
+    def _hide_system_toolbars(self):
+        """Hide system toolbars and panels for clean fullscreen experience"""
+        try:
+            print(f"🖥️ Hiding system toolbars for clean fullscreen...")
+            
+            # Hide desktop panels (works with most desktop environments)
+            panel_commands = [
+                # LXDE/LXQt panels
+                ['pkill', '-f', 'lxpanel'],
+                ['pkill', '-f', 'lxqt-panel'],
+                
+                # XFCE panels
+                ['pkill', '-f', 'xfce4-panel'],
+                
+                # GNOME panels
+                ['pkill', '-f', 'gnome-panel'],
+                
+                # KDE panels
+                ['pkill', '-f', 'plasma-panel'],
+                
+                # Generic panel killers
+                ['pkill', '-f', 'panel'],
+                ['pkill', '-f', 'dock'],
+            ]
+            
+            for cmd in panel_commands:
+                try:
+                    subprocess.run(cmd, check=False, capture_output=True, env={'DISPLAY': ':0'})
+                except Exception:
+                    pass
+            
+            # Disable screen saver and power management
+            try:
+                subprocess.run(['xset', 's', 'off'], check=False, capture_output=True, env={'DISPLAY': ':0'})
+                subprocess.run(['xset', '-dpms'], check=False, capture_output=True, env={'DISPLAY': ':0'})
+                subprocess.run(['xset', 's', 'noblank'], check=False, capture_output=True, env={'DISPLAY': ':0'})
+            except Exception:
+                pass
+            
+            print(f"✅ System toolbars hidden for clean fullscreen")
+            
+        except Exception as e:
+            print(f"⚠️ Could not hide system toolbars: {e}")
+
+    def _ensure_fullscreen_mode(self):
+        """Ensure the player window is in fullscreen mode"""
+        try:
+            print(f"🖥️ Ensuring fullscreen mode...")
+            
+            # Hide system toolbars first
+            self._hide_system_toolbars()
+            
+            # Find player window
+            window_ids = self._find_player_window_ids()
+            if not window_ids:
+                print(f"⚠️ No player window found for fullscreen")
+                return False
+            
+            # Use the first window ID found
+            wid = window_ids[0] if isinstance(window_ids, list) else window_ids
+            
+            # Multiple fullscreen methods for maximum compatibility
+            fullscreen_methods = [
+                # Method 1: wmctrl fullscreen
+                lambda: subprocess.run(['wmctrl', '-ir', wid, '-b', 'add,fullscreen'], 
+                                     check=False, capture_output=True, env={'DISPLAY': ':0'}),
+                
+                # Method 2: xdotool fullscreen key
+                lambda: subprocess.run(['xdotool', 'windowactivate', '--sync', wid] + 
+                                     ['key', 'f'], check=False, capture_output=True, env={'DISPLAY': ':0'}),
+                
+                # Method 3: xdotool F11 key
+                lambda: subprocess.run(['xdotool', 'windowactivate', '--sync', wid] + 
+                                     ['key', 'F11'], check=False, capture_output=True, env={'DISPLAY': ':0'}),
+                
+                # Method 4: Remove decorations and maximize
+                lambda: subprocess.run(['wmctrl', '-ir', wid, '-b', 'remove,decorations'] + 
+                                     ['add,maximized_vert,maximized_horz'], 
+                                     check=False, capture_output=True, env={'DISPLAY': ':0'}),
+            ]
+            
+            # Try each method with delays
+            for i, method in enumerate(fullscreen_methods):
+                try:
+                    print(f"   Trying fullscreen method {i+1}...")
+                    method()
+                    time.sleep(0.5)  # Give time for fullscreen to take effect
+                except Exception as e:
+                    print(f"   Method {i+1} failed: {e}")
+                    continue
+            
+            print(f"✅ Fullscreen mode ensured")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Could not ensure fullscreen mode: {e}")
+            return False
     
     def _detect_available_monitors(self) -> list:
         """Detect which monitors are actually available and update positions"""

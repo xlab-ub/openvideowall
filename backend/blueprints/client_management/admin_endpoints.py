@@ -354,7 +354,7 @@ def assign_client_to_screen():
             "group_id": group_id,
             "group_name": group_name,  # Store group name too
             "screen_number": screen_number,
-            "stream_assignment": f"screen{screen_number}",
+            "stream_assignment": None,  # Will be set to actual FFmpeg stream ID when streaming starts
             "srt_ip": srt_ip,  # Store this for later URL generation
             "stream_url": None,  # No URL yet - will be resolved when streaming starts
             "assigned_at": time.time(),
@@ -712,7 +712,7 @@ def auto_assign_group_clients():
                 # Update client for screen assignment
                 client.update({
                     "screen_number": i,
-                    "stream_assignment": f"screen{i}",
+                    "stream_assignment": None,  # Will be set to actual FFmpeg stream ID when streaming starts
                     "srt_ip": srt_ip,
                     "stream_url": None,  # Will be resolved when streaming starts
                     "assigned_at": time.time(),

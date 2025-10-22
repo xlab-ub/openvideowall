@@ -203,6 +203,7 @@ def update_client_assignments_after_restart(group_id: str, group_name: str):
                 # Update client with new stream information
                 client["stream_id"] = actual_stream_id
                 client["stream_url"] = stream_url
+                client["stream_assignment"] = actual_stream_id  # Store the actual FFmpeg stream ID
                 client["current_stream_ids"] = ffmpeg_stream_ids
                 
                 # Save updated client
@@ -865,6 +866,7 @@ def wait_for_assignment():
                 # Update client with stream URL, stream ID, and current stream IDs
                 client["stream_url"] = stream_url
                 client["stream_id"] = actual_stream_id
+                client["stream_assignment"] = actual_stream_id  # Store the actual FFmpeg stream ID
                 client["current_stream_ids"] = current_stream_ids
                 if hasattr(state, 'add_client'):
                     state.add_client(client_id, client)
