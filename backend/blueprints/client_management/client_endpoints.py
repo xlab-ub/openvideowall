@@ -851,8 +851,12 @@ def wait_for_assignment():
                     "group_name": group_name,
                     "client_id": client_id
                 }), 503
+            elif existing_stream_url and "screen" in existing_stream_url and not existing_stream_id.startswith("screen"):
+                # Client has correct stream ID but old format stream URL - rebuild needed
+                logger.info(f" Client {client_id} has correct stream ID ({existing_stream_id}) but old format stream URL, rebuilding...")
+                should_rebuild = True
             else:
-                logger.info(f" Client {client_id} already has valid stream ID ({existing_stream_id}), skipping rebuild")
+                logger.info(f" Client {client_id} already has valid stream ID ({existing_stream_id}) and URL, skipping rebuild")
                 should_rebuild = False
             
             if should_rebuild:

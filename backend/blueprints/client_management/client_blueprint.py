@@ -23,7 +23,8 @@ from .admin_endpoints import (
     assign_client_to_screen,
     auto_assign_group_clients,
     unassign_client,
-    remove_client
+    remove_client,
+    get_group_stream_ids
 )
 # unassign_client_from_screen is now imported from the main module
 from .info_endpoints import (
@@ -257,6 +258,11 @@ def unassign_from_stream_route():
 def remove_client_route():
     """Admin function: Remove a client from the system completely"""
     return remove_client()
+
+@client_bp.route("/get_group_stream_ids", methods=["POST"])
+def get_group_stream_ids_route():
+    """Get stream IDs for a group from database"""
+    return get_group_stream_ids()
 
 # =====================================
 # LEGACY ENDPOINTS (for backwards compatibility)
