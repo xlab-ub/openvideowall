@@ -1367,6 +1367,20 @@ Note: Make sure the client window has focus for hotkeys to work.
                 else:
                     print(f" ℹ️ No stream validation data received")
                 
+                # Check if SRT IP was corrected
+                srt_ip_corrected = data.get("srt_ip_corrected", False)
+                if srt_ip_corrected:
+                    print(f"\n🔧 SRT IP CORRECTED BY SERVER:")
+                    print(f"   Server corrected the SRT IP address")
+                    print(f"   New Stream URL: {data.get('stream_url', 'Not provided')}")
+                    
+                    # Update our stream URL if provided
+                    new_stream_url = data.get("stream_url")
+                    if new_stream_url and new_stream_url != self.current_stream_url:
+                        print(f"   Updating client stream URL to: {new_stream_url}")
+                        self.current_stream_url = self.fix_stream_url(new_stream_url)
+                        print(f"   Fixed stream URL: {self.current_stream_url}")
+                
                 # Check if server has updated our stream
                 new_stream_id = data.get("stream_id")
                 new_stream_url = data.get("stream_url")

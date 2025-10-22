@@ -873,6 +873,47 @@ def client_heartbeat():
         client["last_seen"] = current_time
         client["status"] = "active"
         
+        # Auto-fix SRT IP if it's wrong
+        correct_srt_ip = os.getenv("SRT_SERVER_IP", "128.205.111.40")
+        current_srt_ip = client.get("srt_ip", "127.0.0.1")
+        srt_ip_corrected = False
+        
+        if current_srt_ip != correct_srt_ip:
+            logger.info(f"🔧 AUTO-FIXING SRT IP:")
+            logger.info(f"   Current SRT IP: {current_srt_ip}")
+            logger.info(f"   Correct SRT IP: {correct_srt_ip}")
+            
+            # Update client's SRT IP
+            client["srt_ip"] = correct_srt_ip
+            srt_ip_corrected = True
+            
+            # If client has a stream URL, rebuild it with correct IP
+            if client.get("stream_url") and client.get("group_id"):
+                try:
+                    from .client_utils import build_stream_url
+                    from ..group_management import get_group_by_id
+                    
+                    group_id = client.get("group_id")
+                    group_name = client.get("group_name", "unknown")
+                    stream_id = client.get("stream_id")
+                    
+                    if stream_id:
+                        group = get_group_by_id(group_id)
+                        if group:
+                            new_stream_url = build_stream_url(group, stream_id, group_name, correct_srt_ip)
+                            client["stream_url"] = new_stream_url
+                            logger.info(f"   Updated stream URL: {new_stream_url}")
+                except Exception as e:
+                    logger.warning(f"   Could not update stream URL: {e}")
+            
+            # Save updated client
+            if hasattr(state, 'add_client'):
+                state.add_client(client_id, client)
+            else:
+                state.clients[client_id] = client
+            
+            logger.info(f"   ✅ SRT IP auto-corrected to {correct_srt_ip}")
+        
         logger.info(f"📊 CLIENT STATUS UPDATE:")
         logger.info(f"   Last Seen: {current_time}")
         logger.info(f"   Status: active")
@@ -969,7 +1010,8 @@ def client_heartbeat():
             "client_id": client_id,
             "timestamp": current_time,
             "status": "active",
-            "stream_validation": stream_validation
+            "stream_validation": stream_validation,
+            "srt_ip_corrected": srt_ip_corrected
         }
         
         # Include current stream information if client has assignments
