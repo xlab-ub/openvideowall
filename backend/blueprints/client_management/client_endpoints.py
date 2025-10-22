@@ -5,6 +5,7 @@ Core client-facing endpoints for registration and status polling
 Complete file with all functions and fixes for stream URL assignment
 """
 
+import os
 import time
 import uuid
 import logging
@@ -203,12 +204,16 @@ def get_active_stream_ids_for_group(group_id: str, group_name: str, screen_count
         logger.error(f"Error getting active stream IDs: {e}")
         return {}
 
-def build_stream_url_for_client(group: Dict[str, Any], stream_id: str, group_name: str, srt_ip: str = "127.0.0.1") -> str:
+def build_stream_url_for_client(group: Dict[str, Any], stream_id: str, group_name: str, srt_ip: str = None) -> str:
     """
     Build SRT stream URL for a client
     FIXED: Complete URL format with proper error handling
     """
     try:
+        # Use environment variable if srt_ip is not provided
+        if srt_ip is None:
+            srt_ip = os.getenv("SRT_SERVER_IP", "127.0.0.1")
+        
         ports = group.get("ports", {})
         srt_port = ports.get("srt_port")
         
@@ -342,7 +347,7 @@ def register_client():
             "stream_url": existing_client.get("stream_url") if existing_client else None,
             "screen_number": existing_client.get("screen_number") if existing_client else None,
             "assigned_at": existing_client.get("assigned_at") if existing_client else None,
-            "srt_ip": existing_client.get("srt_ip", "127.0.0.1") if existing_client else "127.0.0.1"
+            "srt_ip": existing_client.get("srt_ip", os.getenv("SRT_SERVER_IP", "127.0.0.1")) if existing_client else os.getenv("SRT_SERVER_IP", "127.0.0.1")
         }
         
         # Update assignment status based on current assignments
@@ -684,7 +689,7 @@ def wait_for_assignment():
                     actual_stream_id = client.get("stream_assignment", "default")
                 
                 # Get SRT IP from client or use default
-                srt_ip = client.get("srt_ip", "127.0.0.1")
+                srt_ip = client.get("srt_ip", os.getenv("SRT_SERVER_IP", "127.0.0.1"))
                 
                 # Build the stream URL with the actual stream ID
                 stream_url = build_stream_url(group, actual_stream_id, group_name, srt_ip)
@@ -1234,7 +1239,7 @@ def resolve_stream_urls_for_group(group_id: str, group_name: str):
                 screen_stream_key = f"test{screen_number}"
                 if screen_stream_key in active_stream_ids:
                     stream_id = active_stream_ids[screen_stream_key]
-                    srt_ip = client.get("srt_ip", "127.0.0.1")
+                    srt_ip = client.get("srt_ip", os.getenv("SRT_SERVER_IP", "127.0.0.1"))
                     
                     # FIXED: Use the corrected build function
                     stream_url = build_stream_url_for_client(group, stream_id, group_name, srt_ip)

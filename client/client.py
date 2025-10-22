@@ -1268,7 +1268,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                     
                     # Update our stream info
                     self.current_stream_id = new_stream_id
-                    self.current_stream_url = new_stream_url
+                    self.current_stream_url = self.fix_stream_url(new_stream_url)
                     self.current_stream_version = new_stream_version
                     
                     # Stop current ffplay and prepare for new stream
@@ -1286,7 +1286,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                     print(f" 🔄 Stream URL updated during heartbeat:")
                     print(f"   Old: {self.current_stream_url}")
                     print(f"   New: {new_stream_url}")
-                    self.current_stream_url = new_stream_url
+                    self.current_stream_url = self.fix_stream_url(new_stream_url)
                     self.current_stream_version = new_stream_version
                     
                     # Stop current ffplay and prepare for new URL
@@ -1305,7 +1305,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                     if new_stream_id:
                         self.current_stream_id = new_stream_id
                     if new_stream_url:
-                        self.current_stream_url = new_stream_url
+                        self.current_stream_url = self.fix_stream_url(new_stream_url)
                     if new_stream_version:
                         self.current_stream_version = new_stream_version
                     
@@ -1853,7 +1853,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                                 print(f"   New version: {new_stream_version}")
                                 
                                 # Update our cached values
-                                self.current_stream_url = new_stream_url
+                                self.current_stream_url = self.fix_stream_url(new_stream_url)
                                 self.current_stream_version = new_stream_version
                                 return True
                             else:
