@@ -121,7 +121,13 @@ const StreamingDialogs: React.FC<StreamingDialogsProps> = ({
                 <Label className="text-sm font-medium">Video File:</Label>
                 <Select
                   value={selectedVideoFile || ""}
-                  onValueChange={setSelectedVideoFile}
+                  onValueChange={(value) => {
+                    if (value === "__CLEAR__") {
+                      setSelectedVideoFile("");
+                    } else {
+                      setSelectedVideoFile(value);
+                    }
+                  }}
                 >
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue placeholder="Select video file to split" />
@@ -130,11 +136,13 @@ const StreamingDialogs: React.FC<StreamingDialogsProps> = ({
                     <SelectItem value="__CLEAR__">
                       <span className="text-gray-400">Clear selection</span>
                     </SelectItem>
-                    {videos.map((video) => (
-                      <SelectItem key={video.name} value={video.name}>
-                        {video.name}
-                      </SelectItem>
-                    ))}
+                    {videos
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map((video) => (
+                        <SelectItem key={video.name} value={video.name}>
+                          {video.name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>

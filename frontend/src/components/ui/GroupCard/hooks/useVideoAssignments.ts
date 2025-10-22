@@ -64,7 +64,7 @@ const loadVideoAssignments = (groupId: string, screenCount: number): { assignmen
   };
 };
 
-export const useVideoAssignments = (groupId: string, screenCount: number) => {
+export const useVideoAssignments = (groupId: string, screenCount: number, onVideoChange?: () => void) => {
   const [videoAssignments, setVideoAssignments] = useState<VideoAssignment[]>([]);
   const [showVideoConfig, setShowVideoConfig] = useState(false);
   const [selectedVideoFile, setSelectedVideoFile] = useState<string>('');
@@ -93,6 +93,14 @@ export const useVideoAssignments = (groupId: string, screenCount: number) => {
 
     // Save to localStorage immediately when user makes changes
     saveVideoAssignments(groupId, newAssignments, selectedVideoFile);
+
+    // Trigger restart if callback provided
+    if (onVideoChange) {
+      // Use a small delay to ensure state is updated
+      setTimeout(() => {
+        restartWithCurrentState();
+      }, 100);
+    }
   };
 
   // Reset video assignments to empty
@@ -110,6 +118,62 @@ export const useVideoAssignments = (groupId: string, screenCount: number) => {
   const setSelectedVideoFileAndSave = (fileName: string) => {
     setSelectedVideoFile(fileName);
     saveVideoAssignments(groupId, videoAssignments, fileName);
+    
+    // Trigger restart if callback provided
+    if (onVideoChange) {
+      // Use a small delay to ensure state is updated
+      setTimeout(() => {
+        restartWithCurrentState();
+      }, 100);
+    }
+  };
+
+  // Enhanced restart function that uses current state
+  const restartWithCurrentState = async () => {
+    if (!onVideoChange) return;
+    
+    try {
+      console.log(` Restarting streaming with current video assignments for group ${groupId}`);
+      
+      // Import API here to avoid circular dependency
+      const { api } = await import('../../../API/api');
+      
+      // Stop current streaming
+      await api.group.stopGroup(groupId);
+      console.log(` Current streaming stopped, restarting...`);
+      
+      // Wait a moment for cleanup
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Restart based on current assignments
+      const validAssignments = videoAssignments.filter(assignment => assignment.file);
+      
+      if (validAssignments.length === 0) {
+        console.log(` No video assignments, cannot restart`);
+        return;
+      }
+      
+      if (validAssignments.length === 1 && selectedVideoFile) {
+        // Single video split mode
+        await api.group.startSingleVideoSplit(groupId, {
+          video_file: selectedVideoFile,
+          screen_count: videoAssignments.length,
+          orientation: 'horizontal', // Default, could be made configurable
+          enable_looping: true
+        });
+      } else {
+        // Multi-video mode
+        await api.group.startMultiVideoGroup(groupId, validAssignments, {
+          screen_count: videoAssignments.length,
+          orientation: 'horizontal' // Default, could be made configurable
+        });
+      }
+      
+      console.log(` Streaming restarted successfully for group ${groupId}`);
+      
+    } catch (error) {
+      console.error(` Error restarting streaming for group ${groupId}:`, error);
+    }
   };
 
   // Check if all screens have video assignments

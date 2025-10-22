@@ -124,6 +124,58 @@ export const useStreamingOperations = ({
     }
   };
 
+  const handleRestartStreaming = async () => {
+    try {
+      setOperationInProgress('restarting');
+      console.log(` Restarting streaming for group ${group.id}`);
+
+      // First stop current streaming
+      await api.group.stopGroup(group.id);
+      console.log(` Current streaming stopped, restarting...`);
+
+      // Wait a moment for cleanup
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Determine which restart method to use based on group streaming mode
+      if (group.streaming_mode === 'single_video_split') {
+        if (!selectedVideoFile) {
+          throw new Error('No video file selected for split mode');
+        }
+        await api.group.startSingleVideoSplit(group.id, {
+          video_file: selectedVideoFile,
+          screen_count: group.screen_count,
+          orientation: group.orientation,
+          enable_looping: true
+        });
+      } else {
+        // Multi-video mode
+        const validAssignments = videoAssignments.filter(assignment => assignment.file);
+        if (validAssignments.length !== group.screen_count) {
+          throw new Error(`Please assign videos to all ${group.screen_count} screens`);
+        }
+        await api.group.startMultiVideoGroup(group.id, validAssignments, {
+          screen_count: group.screen_count,
+          orientation: group.orientation
+        });
+      }
+
+      console.log(` Streaming restarted successfully for group ${group.id}`);
+
+      // Notify parent
+      if (onStreamingStatusChange) {
+        onStreamingStatusChange(group.id, true);
+      }
+
+      if (onRefresh) onRefresh();
+
+    } catch (error) {
+      console.error(` Error restarting streaming for group ${group.id}:`, error);
+      alert(`Failed to restart streaming: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setOperationInProgress(null);
+    }
+  };
+
   return {
     showMultiVideoDialog,
     setShowMultiVideoDialog,
@@ -133,6 +185,7 @@ export const useStreamingOperations = ({
     isStartingSingleVideo,
     handleStartMultiVideo,
     handleStartSingleVideoSplit,
-    handleStopStreaming
+    handleStopStreaming,
+    handleRestartStreaming
   };
 };

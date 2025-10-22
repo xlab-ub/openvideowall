@@ -22,6 +22,7 @@ const ClientsTab = () => {
   const loadClients = async (showRefreshing = false) => {
     try {
       if (showRefreshing) setRefreshing(true);
+      setLoading(true);
       console.log(' Loading clients data...');
 
       const clientsData = await clientApi.getClients();
@@ -64,6 +65,7 @@ const ClientsTab = () => {
         }
       });
     } finally {
+      setLoading(false);
       if (showRefreshing) setRefreshing(false);
     }
   };
@@ -248,10 +250,10 @@ const ClientsTab = () => {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Users className="w-5 h-5" />
-                Active Clients ({clients.length})
+                All Clients ({clients.length})
               </CardTitle>
               <CardDescription>
-                Connected clients only. Disconnected clients are automatically removed. Auto-refreshes every 5 seconds.
+                All clients (online and offline). Shows comprehensive details including assignments, stream URLs, and timestamps. Auto-refreshes every 5 seconds.
               </CardDescription>
             </div>
             <Button
@@ -283,7 +285,12 @@ const ClientsTab = () => {
 
           {/* Debug Info */}
           <div className="mb-4 p-3 bg-gray-100 rounded text-sm text-gray-600">
-            Debug: {clients.length} total clients ({clients.filter(c => c.status === 'active').length} online, {clients.filter(c => c.status === 'inactive').length} offline), {filteredClients.length} shown after filtering
+            Debug: {clients.length} total clients ({clients.filter(c => c.status === 'active').length} online, {clients.filter(c => c.status === 'inactive' && c.assignment_status === 'screen_assigned' && c.stream_url).length} streaming without heartbeat, {clients.filter(c => c.status === 'inactive' && !(c.assignment_status === 'screen_assigned' && c.stream_url)).length} offline), {filteredClients.length} shown after filtering
+            {clients.filter(c => c.status === 'inactive' && c.assignment_status === 'screen_assigned' && c.stream_url).length > 0 && (
+              <div className="mt-2 text-yellow-700">
+                ⚠️ Some clients are streaming but not sending heartbeats. They may be running old client code.
+              </div>
+            )}
           </div>
 
           {/* Clients List */}
@@ -320,49 +327,111 @@ const ClientsTab = () => {
                   className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-center gap-4">
-                    {/* Show actual status */}
-                    <div className={`w-3 h-3 rounded-full ${client.status === 'active' ? 'bg-green-500' : 'bg-red-500'}`} />
+                    {/* Show status indicator */}
+                    <div className={`w-3 h-3 rounded-full ${
+                      client.status === 'active' 
+                        ? 'bg-green-500' 
+                        : client.assignment_status === 'screen_assigned' && client.stream_url
+                          ? 'bg-yellow-500'
+                          : 'bg-red-500'
+                    }`} />
 
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <h3 className="font-medium text-gray-900">
                           {client.display_name || client.hostname || client.client_id}
                         </h3>
-                        {/* Show actual status */}
+                        {/* Show status based on heartbeat and assignments */}
                         <Badge 
                           variant="default" 
                           className={client.status === 'active' 
                             ? 'bg-green-100 text-green-800 border-green-200' 
-                            : 'bg-red-100 text-red-800 border-red-200'
+                            : client.assignment_status === 'screen_assigned' && client.stream_url
+                              ? 'bg-yellow-100 text-yellow-800 border-yellow-200'
+                              : 'bg-red-100 text-red-800 border-red-200'
                           }
                         >
-                          {client.status === 'active' ? 'Online' : 'Offline'}
+                          {client.status === 'active' 
+                            ? 'Online' 
+                            : client.assignment_status === 'screen_assigned' && client.stream_url
+                              ? 'Streaming (No Heartbeat)'
+                              : 'Offline'
+                          }
                         </Badge>
                       </div>
 
-                      <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
-                        <span>IP: {client.ip_address}</span>
-                        <span>ID: {client.client_id}</span>
-                        {client.group_name && (
-                          <Badge variant="secondary" className="text-xs">
-                            Group: {client.group_name}
-                          </Badge>
-                        )}
-                        {client.stream_assignment && (
-                          <Badge variant="outline" className="text-xs">
-                            Stream: {client.stream_assignment}
-                          </Badge>
-                        )}
-                        {client.last_seen_formatted && (
-                          <span className="text-xs">
-                            Last seen: {client.last_seen_formatted}
-                          </span>
-                        )}
-                        {client.screen_number !== undefined && client.screen_number !== null && (
-                          <Badge variant="outline" className="text-xs">
-                            Screen {client.screen_number + 1}
-                          </Badge>
-                        )}
+                      <div className="space-y-2">
+                        {/* Basic Info Row */}
+                        <div className="flex items-center gap-4 text-sm text-gray-600">
+                          <span><strong>IP:</strong> {client.ip_address}</span>
+                          <span><strong>ID:</strong> {client.client_id}</span>
+                          <span><strong>Hostname:</strong> {client.hostname}</span>
+                        </div>
+                        
+                        {/* Assignment Info Row */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {client.group_name && (
+                            <Badge variant="secondary" className="text-xs">
+                              <strong>Group:</strong> {client.group_name}
+                            </Badge>
+                          )}
+                          {client.assignment_status && (
+                            <Badge 
+                              variant={client.assignment_status === 'screen_assigned' ? 'default' : 'outline'} 
+                              className="text-xs"
+                            >
+                              <strong>Status:</strong> {client.assignment_status}
+                            </Badge>
+                          )}
+                          {client.screen_number !== undefined && client.screen_number !== null && (
+                            <Badge variant="outline" className="text-xs">
+                              <strong>Screen:</strong> {client.screen_number + 1}
+                            </Badge>
+                          )}
+                          {client.stream_assignment && (
+                            <Badge variant="outline" className="text-xs">
+                              <strong>Stream:</strong> {client.stream_assignment}
+                            </Badge>
+                          )}
+                        </div>
+                        
+                        {/* Stream URL and Technical Details */}
+                        <div className="space-y-1">
+                          {client.stream_url && (
+                            <div className="text-xs text-gray-500">
+                              <strong>Stream URL:</strong> 
+                              <div className="font-mono bg-gray-100 p-1 rounded mt-1 break-all">
+                                {client.stream_url}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Technical Details */}
+                          <div className="flex items-center gap-4 text-xs text-gray-500">
+                            {client.platform && (
+                              <span><strong>Platform:</strong> {client.platform}</span>
+                            )}
+                            {client.srt_ip && (
+                              <span><strong>SRT IP:</strong> {client.srt_ip}</span>
+                            )}
+                            {client.stream_version && (
+                              <span><strong>Stream Version:</strong> {client.stream_version}</span>
+                            )}
+                          </div>
+                          
+                          {/* Timestamps */}
+                          <div className="flex items-center gap-4 text-xs text-gray-500">
+                            {client.registered_at && (
+                              <span><strong>Registered:</strong> {new Date(client.registered_at * 1000).toLocaleString()}</span>
+                            )}
+                            {client.assigned_at && (
+                              <span><strong>Assigned:</strong> {new Date(client.assigned_at * 1000).toLocaleString()}</span>
+                            )}
+                            {client.last_seen && (
+                              <span><strong>Last Seen:</strong> {new Date(client.last_seen * 1000).toLocaleString()} ({Math.round((Date.now() / 1000) - client.last_seen)}s ago)</span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>

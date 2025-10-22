@@ -96,6 +96,29 @@ const GroupCard: React.FC<GroupCardProps> = ({
     setOperationInProgress
   } = useGroupCardState();
 
+  // Restart function for video changes (defined early to avoid circular dependency)
+  const handleVideoChangeRestart = async () => {
+    if (!actualIsStreaming) return; // Only restart if currently streaming
+    
+    try {
+      console.log(` Video changed, restarting streaming for group ${group.id}`);
+      
+      // Stop current streaming
+      await api.group.stopGroup(group.id);
+      console.log(` Current streaming stopped, restarting...`);
+      
+      // Wait a moment for cleanup
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // We'll need to get the current video assignments and selected video
+      // This will be handled by the video assignments hook
+      
+    } catch (error) {
+      console.error(` Error restarting streaming for group ${group.id}:`, error);
+      // Don't show alert for automatic restart, just log the error
+    }
+  };
+
   const {
     videoAssignments,
     showVideoConfig,
@@ -106,7 +129,7 @@ const GroupCard: React.FC<GroupCardProps> = ({
     resetVideoAssignments,
     hasCompleteAssignments,
     hasAnyAssignments
-  } = useVideoAssignments(group.id, group.screen_count);
+  } = useVideoAssignments(group.id, group.screen_count, handleVideoChangeRestart);
 
   const {
     showMultiVideoDialog,
@@ -117,7 +140,8 @@ const GroupCard: React.FC<GroupCardProps> = ({
     isStartingSingleVideo,
     handleStartMultiVideo,
     handleStartSingleVideoSplit,
-    handleStopStreaming
+    handleStopStreaming,
+    handleRestartStreaming
   } = useStreamingOperations({
     group,
     videoAssignments,
