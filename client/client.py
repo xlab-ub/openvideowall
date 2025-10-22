@@ -187,32 +187,52 @@ class UnifiedMultiScreenClient:
                 return "127.0.0.1"
     
     def _detect_available_monitors(self) -> list:
-        """Detect which monitors are actually available"""
+        """Detect which monitors are actually available and update positions"""
         available_monitors = []
+        detected_positions = []
         
         try:
-            # Use xrandr to detect available monitors
-            result = subprocess.run(['/usr/bin/xrandr', '--listmonitors'], capture_output=True, text=True)
+            # Use xrandr to get detailed monitor information
+            result = subprocess.run(['/usr/bin/xrandr', '--query'], capture_output=True, text=True)
             if result.returncode == 0:
-                lines = result.stdout.strip().split('\n')[1:]  # Skip header
-                for line in lines:
-                    if 'HDMI' in line or 'DP' in line or 'eDP' in line:
-                        # Extract monitor info - look for position info
+                current_output = None
+                for line in result.stdout.split('\n'):
+                    if ' connected' in line and ('HDMI' in line or 'DP' in line or 'eDP' in line):
+                        # Parse the output line to get position
                         parts = line.split()
-                        for part in parts:
-                            if '/' in part and 'x' in part:
-                                # Found resolution info, this monitor is active
-                                monitor_index = len(available_monitors)
-                                if monitor_index < len(self.monitor_positions):
-                                    available_monitors.append(monitor_index)
-                                break
+                        if len(parts) >= 3:
+                            output_name = parts[0]
+                            status = parts[1]
+                            if status == 'connected':
+                                # Look for position info in the resolution part
+                                for i, part in enumerate(parts):
+                                    if '+' in part and 'x' in part:
+                                        # Found position info like "1920x1080+0+0"
+                                        try:
+                                            resolution_pos = part.split('+')
+                                            if len(resolution_pos) >= 3:
+                                                x_pos = int(resolution_pos[1])
+                                                y_pos = int(resolution_pos[2])
+                                                detected_positions.append((x_pos, y_pos))
+                                                available_monitors.append(len(available_monitors))
+                                                self.logger.info(f"Detected monitor {len(available_monitors)} at position ({x_pos}, {y_pos})")
+                                                break
+                                        except (ValueError, IndexError):
+                                            continue
+                
+                # Update monitor positions with detected positions
+                if detected_positions:
+                    self.monitor_positions = detected_positions
+                    self.logger.info(f"Updated monitor positions: {self.monitor_positions}")
+                    return available_monitors
+                    
         except Exception as e:
             self.logger.warning(f"Could not detect monitors with xrandr: {e}")
         
-        # Fallback: assume monitors 0 and 1 are available if detection fails
+        # Fallback: use default positions if detection fails
         if not available_monitors:
             available_monitors = [0, 1]
-            self.logger.info("Monitor detection failed, assuming monitors 0 and 1 are available")
+            self.logger.info("Monitor detection failed, using default positions")
         
         return available_monitors
     
@@ -242,8 +262,17 @@ class UnifiedMultiScreenClient:
                             try:
                                 window_x = int(parts[2])
                                 window_y = int(parts[3])
-                                # Check if window is positioned on this monitor
-                                if abs(window_x - x) < 200 and abs(window_y - y) < 200:
+                                # Check for overlap with this monitor's area
+                                # Get window dimensions
+                                window_w = int(parts[4]) if len(parts) > 4 else 1920
+                                window_h = int(parts[5]) if len(parts) > 5 else 1080
+                                
+                                # Monitor area is typically 1920x1080, so check if windows overlap
+                                monitor_w, monitor_h = 1920, 1080  # Default monitor size
+                                
+                                # Check if windows overlap with monitor area
+                                if (window_x < x + monitor_w and window_x + window_w > x and
+                                    window_y < y + monitor_h and window_y + window_h > y):
                                     self.logger.info(f"Monitor {monitor_index + 1} is already in use by another client at ({window_x}, {window_y})")
                                     return False
                             except (ValueError, IndexError):
@@ -485,7 +514,7 @@ class UnifiedMultiScreenClient:
                     print(f"   Making window fullscreen...")
                     self._force_fullscreen_for_window(window['id'], x, y)
                     
-                    # Verify positioning
+                    # Verify positioning and check for overlaps
                     time.sleep(1)
                     check_result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
                     if check_result.returncode == 0:
@@ -494,8 +523,14 @@ class UnifiedMultiScreenClient:
                                 parts = line.split()
                                 if len(parts) >= 6:
                                     current_x, current_y = int(parts[2]), int(parts[3])
+                                    current_w = int(parts[4]) if len(parts) > 4 else 1920
+                                    current_h = int(parts[5]) if len(parts) > 5 else 1080
+                                    
                                     if abs(current_x - x) < 100 and abs(current_y - y) < 100:
                                         print(f"   ✅ Window positioned and fullscreened!")
+                                        
+                                        # Check for overlaps with other clients
+                                        self._check_and_fix_overlaps(window['id'], x, y, current_x, current_y, current_w, current_h)
                                         return
                     
                     print(f"   ⚠️ Window positioned, fullscreen may need adjustment")
@@ -534,7 +569,7 @@ class UnifiedMultiScreenClient:
         positioning_thread.start()
     
     def _ensure_window_position(self):
-        """Ensure the window is still positioned on the correct monitor"""
+        """Ensure the window is still positioned on the correct monitor and prevent overlaps"""
         try:
             x, y = self.monitor_positions[self.current_monitor]
             window_title = f"Multi-Screen Client - {self.display_name}"
@@ -552,24 +587,25 @@ class UnifiedMultiScreenClient:
                             try:
                                 window_x = int(parts[2])
                                 window_y = int(parts[3])
+                                window_w = int(parts[4]) if len(parts) > 4 else 1920
+                                window_h = int(parts[5]) if len(parts) > 5 else 1080
+                                
                                 # Check if window is positioned on correct monitor
                                 # Use a larger tolerance to avoid constant repositioning
-                                if abs(window_x - x) > 200 or abs(window_y - y) > 200:
+                                if abs(window_x - x) > 100 or abs(window_y - y) > 100:
                                     # Window is not on correct monitor, reposition it
                                     window_id = parts[0]
                                     print(f"   🔄 Repositioning window from ({window_x}, {window_y}) to ({x}, {y})")
-                                    move_result = subprocess.run([
-                                        'wmctrl', '-ir', window_id, '-e', f'0,{x},{y},-1,-1'
-                                    ], capture_output=True, text=True)
                                     
-                                    if move_result.returncode == 0:
-                                        self.logger.info(f"Repositioned window to Monitor {self.current_monitor + 1}")
-                                    else:
-                                        self.logger.debug(f"Failed to reposition window: {move_result.stderr}")
+                                    # Use the improved positioning method
+                                    self._force_fullscreen_for_window(window_id, x, y)
+                                    
+                                    self.logger.info(f"Repositioned window to Monitor {self.current_monitor + 1}")
                                     break
                                 else:
-                                    # Window is in correct position, no need to move
-                                    self.logger.debug(f"Window already positioned correctly at ({window_x}, {window_y})")
+                                    # Window is in correct position, check for overlaps with other clients
+                                    self._check_and_fix_overlaps(window_id, x, y, window_x, window_y, window_w, window_h)
+                                    
                                     # Ensure fullscreen mode is active using safe method
                                     self._safe_force_fullscreen("continuous monitoring")
                             except (ValueError, IndexError):
@@ -577,6 +613,38 @@ class UnifiedMultiScreenClient:
                                 
         except Exception as e:
             self.logger.debug(f"Window position check failed: {e}")
+    
+    def _check_and_fix_overlaps(self, window_id, target_x, target_y, current_x, current_y, window_w, window_h):
+        """Check for overlaps with other client windows and fix them"""
+        try:
+            # Check if this window overlaps with other client windows
+            result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
+            if result.returncode == 0:
+                for line in result.stdout.split('\n'):
+                    if not line.strip():
+                        continue
+                    # Check other client windows
+                    if "Multi-Screen Client" in line and "Window Manager" not in line and self.display_name not in line:
+                        parts = line.split()
+                        if len(parts) >= 6:
+                            try:
+                                other_x = int(parts[2])
+                                other_y = int(parts[3])
+                                other_w = int(parts[4]) if len(parts) > 4 else 1920
+                                other_h = int(parts[5]) if len(parts) > 5 else 1080
+                                
+                                # Check if windows overlap
+                                if (current_x < other_x + other_w and current_x + window_w > other_x and
+                                    current_y < other_y + other_h and current_y + window_h > other_y):
+                                    
+                                    # Overlap detected! Force reposition to correct monitor
+                                    print(f"   ⚠️ Overlap detected! Forcing reposition to correct monitor")
+                                    self._force_fullscreen_for_window(window_id, target_x, target_y)
+                                    break
+                            except (ValueError, IndexError):
+                                continue
+        except Exception as e:
+            self.logger.debug(f"Overlap check failed: {e}")
     
     def _start_fallback_monitor(self):
         """Start the fallback monitoring thread"""
