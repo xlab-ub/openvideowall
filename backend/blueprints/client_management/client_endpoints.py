@@ -199,8 +199,16 @@ def update_client_assignments_after_restart(group_id: str, group_name: str):
                     continue
                 
                 # Get group info for URL building
-                from group_management import get_group_by_id
-                group = get_group_by_id(group_id)
+                try:
+                    from ..group_management import get_group_by_id
+                    group = get_group_by_id(group_id)
+                except ImportError:
+                    try:
+                        from blueprints.group_management import get_group_by_id
+                        group = get_group_by_id(group_id)
+                    except ImportError:
+                        logger.warning("Group management module not available")
+                        group = None
                 if not group:
                     logger.error(f"Group {group_id} not found")
                     continue
@@ -422,8 +430,16 @@ def register_client():
             monitor_y = persistent_assignment.get("monitor_y")
             
             # Check if group still exists
-            from group_management import get_group_by_id
-            group = get_group_by_id(group_id)
+            try:
+                from ..group_management import get_group_by_id
+                group = get_group_by_id(group_id)
+            except ImportError:
+                try:
+                    from blueprints.group_management import get_group_by_id
+                    group = get_group_by_id(group_id)
+                except ImportError:
+                    logger.warning("Group management module not available")
+                    group = None
             if group:
                 logger.info(f"Group {group_id} exists, applying persistent assignment")
                 

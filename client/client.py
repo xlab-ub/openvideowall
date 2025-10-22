@@ -420,6 +420,60 @@ class UnifiedMultiScreenClient:
             self.logger.warning(f"Monitor count check failed: {e}, assuming single monitor")
             return True  # Assume single monitor if check fails
     
+    def _is_raspberry_pi(self) -> bool:
+        """Check if running on Raspberry Pi"""
+        try:
+            # Check for Raspberry Pi specific files
+            with open('/proc/cpuinfo', 'r') as f:
+                cpuinfo = f.read()
+                if 'BCM' in cpuinfo or 'Raspberry Pi' in cpuinfo:
+                    return True
+            
+            # Check for Pi-specific hardware
+            if os.path.exists('/proc/device-tree/model'):
+                with open('/proc/device-tree/model', 'r') as f:
+                    model = f.read().strip()
+                    if 'Raspberry Pi' in model:
+                        return True
+            
+            return False
+        except Exception:
+            return False
+    
+    def _is_shared_display_setup(self) -> bool:
+        """Check if this is a shared display setup (multiple clients, single monitor)"""
+        try:
+            # Check if there are other Multi-Screen Client processes running
+            result = subprocess.run(['ps', 'aux'], capture_output=True, text=True)
+            if result.returncode != 0:
+                return False
+            
+            # Count Multi-Screen Client processes (excluding this one)
+            client_processes = []
+            for line in result.stdout.split('\n'):
+                if 'Multi-Screen Client' in line and 'python' in line:
+                    # Extract PID
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        try:
+                            pid = int(parts[1])
+                            if pid != os.getpid():  # Exclude current process
+                                client_processes.append(pid)
+                        except ValueError:
+                            continue
+            
+            is_shared = len(client_processes) > 0
+            if is_shared:
+                self.logger.info(f"Shared display setup detected ({len(client_processes)} other client(s) running)")
+            else:
+                self.logger.info("Single client setup detected")
+            
+            return is_shared
+            
+        except Exception as e:
+            self.logger.warning(f"Shared display check failed: {e}")
+            return False
+    
     def _auto_assign_monitor(self) -> int:
         """Automatically assign a monitor based on hostname and availability"""
         # Try to assign monitor based on hostname pattern
@@ -570,9 +624,10 @@ class UnifiedMultiScreenClient:
         self.move_to_monitor(prev_monitor)
     
     def _gentle_position_window(self):
-        """Gentle window positioning for single monitor setups"""
+        """Gentle window positioning for single monitor or shared display setups"""
         try:
-            print(f"   🎯 Gentle positioning for single monitor setup")
+            setup_type = "shared display" if self._is_shared_display_setup() else "single monitor"
+            print(f"   🎯 Gentle positioning for {setup_type} setup")
             
             # Wait for window to appear
             time.sleep(2)
@@ -586,19 +641,27 @@ class UnifiedMultiScreenClient:
             # Use the first window ID found
             wid = window_ids[0] if isinstance(window_ids, list) else window_ids
             
-            # For single monitor, just ensure it's fullscreen without aggressive positioning
-            print(f"   🖥️ Ensuring fullscreen mode for single monitor")
+            # For single monitor or shared display, just ensure it's fullscreen without aggressive positioning
+            print(f"   🖥️ Ensuring fullscreen mode for {setup_type}")
             
             # Remove any existing states
             subprocess.run(['wmctrl', '-ir', wid, '-b', 'remove,maximized_vert,maximized_horz,fullscreen'], 
                          check=False, capture_output=True, env={'DISPLAY': ':0'})
             time.sleep(0.5)
             
+            # For shared display setups, add a small delay to avoid conflicts
+            if self._is_shared_display_setup():
+                # Add a small random delay to prevent both clients from trying to fullscreen at the same time
+                import random
+                delay = random.uniform(0.5, 1.5)
+                print(f"   ⏱️ Shared display delay: {delay:.1f}s")
+                time.sleep(delay)
+            
             # Set fullscreen
             subprocess.run(['wmctrl', '-ir', wid, '-b', 'add,fullscreen'], 
                          check=False, capture_output=True, env={'DISPLAY': ':0'})
             
-            print(f"   ✅ Gentle positioning completed")
+            print(f"   ✅ Gentle positioning completed for {setup_type}")
             
         except Exception as e:
             self.logger.warning(f"Gentle positioning failed: {e}")
@@ -637,9 +700,10 @@ class UnifiedMultiScreenClient:
             print(f"   Skipping window positioning - player not running")
             return
         
-        # For single monitor setups, use gentler positioning
-        if self._is_single_monitor_setup():
-            print(f"   🎯 Single monitor setup - using gentle positioning")
+        # For single monitor or shared display setups, use gentler positioning
+        if self._is_single_monitor_setup() or self._is_shared_display_setup():
+            setup_type = "shared display" if self._is_shared_display_setup() else "single monitor"
+            print(f"   🎯 {setup_type} setup - using gentle positioning")
             self._gentle_position_window()
             return
         
@@ -872,9 +936,10 @@ class UnifiedMultiScreenClient:
         if self.fallback_monitor_thread and self.fallback_monitor_thread.is_alive():
             return
         
-        # Check if we're in single monitor mode
-        if self._is_single_monitor_setup():
-            self.logger.info("Single monitor setup detected - skipping aggressive positioning monitoring")
+        # Check if we're in single monitor mode or shared display setup
+        if self._is_single_monitor_setup() or self._is_shared_display_setup():
+            setup_type = "shared display" if self._is_shared_display_setup() else "single monitor"
+            self.logger.info(f"{setup_type} setup detected - skipping aggressive positioning monitoring")
             return
             
         def fallback_monitor():
@@ -1846,8 +1911,10 @@ Note: Make sure the client window has focus for hotkeys to work.
             self.logger.info(f"C++ Player started for SEI stream")
             
             # Position window on the correct monitor gently
-            if self._is_single_monitor_setup():
-                # Single monitor: just one gentle positioning attempt
+            if self._is_single_monitor_setup() or self._is_shared_display_setup():
+                # Single monitor or shared display: just one gentle positioning attempt
+                setup_type = "shared display" if self._is_shared_display_setup() else "single monitor"
+                print(f"   🎯 {setup_type} setup - using gentle positioning timers")
                 threading.Timer(2.0, self._position_window_on_monitor).start()
             else:
                 # Multi-monitor: multiple attempts for proper positioning
@@ -2075,10 +2142,12 @@ Note: Make sure the client window has focus for hotkeys to work.
             self._ensure_window_visible()
             
             # Position window on the correct monitor gently
-            if self._is_single_monitor_setup():
-                # Single monitor: just one gentle positioning attempt
+            if self._is_single_monitor_setup() or self._is_shared_display_setup():
+                # Single monitor or shared display: just one gentle positioning attempt
+                setup_type = "shared display" if self._is_shared_display_setup() else "single monitor"
+                print(f"   🎯 {setup_type} setup - using gentle positioning timers")
                 threading.Timer(2.0, self._position_window_on_monitor).start()
-                # Single monitor: gentler fullscreen enforcement
+                # Single monitor/shared display: gentler fullscreen enforcement
                 threading.Timer(4.0, self._force_immediate_fullscreen).start()
             else:
                 # Multi-monitor: multiple attempts for proper positioning
