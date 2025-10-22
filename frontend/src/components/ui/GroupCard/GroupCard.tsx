@@ -128,8 +128,9 @@ const GroupCard: React.FC<GroupCardProps> = ({
     handleVideoAssignmentChange,
     resetVideoAssignments,
     hasCompleteAssignments,
-    hasAnyAssignments
-  } = useVideoAssignments(group.id, group.screen_count, handleVideoChangeRestart);
+    hasAnyAssignments,
+    saveVideoChanges
+  } = useVideoAssignments(group.id, group.screen_count, handleVideoChangeRestart, false); // Disable auto-restart
 
   const {
     showMultiVideoDialog,
@@ -193,6 +194,7 @@ const GroupCard: React.FC<GroupCardProps> = ({
               resetVideoAssignments={resetVideoAssignments}
               hasCompleteAssignments={hasCompleteAssignments}
               hasAnyAssignments={hasAnyAssignments}
+              saveVideoChanges={saveVideoChanges}
               onDelete={onDelete}
               onAssignClient={onAssignClient}
 

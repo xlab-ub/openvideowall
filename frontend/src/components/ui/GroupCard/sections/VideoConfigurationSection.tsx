@@ -21,6 +21,7 @@ interface VideoConfigurationSectionProps {
   resetVideoAssignments: () => void;
   hasAnyAssignments: boolean;
   hasCompleteAssignments: boolean;
+  saveVideoChanges: () => Promise<void>;
 }
 
 const VideoConfigurationSection: React.FC<VideoConfigurationSectionProps> = ({
@@ -34,7 +35,8 @@ const VideoConfigurationSection: React.FC<VideoConfigurationSectionProps> = ({
   handleVideoAssignmentChange,
   resetVideoAssignments,
   hasAnyAssignments,
-  hasCompleteAssignments
+  hasCompleteAssignments,
+  saveVideoChanges
 }) => {
   if (group.streaming_mode === 'multi_video') {
     return (
@@ -123,6 +125,26 @@ const VideoConfigurationSection: React.FC<VideoConfigurationSectionProps> = ({
                     {group.screen_count - videoAssignments.filter(a => a.file).length} screens still need video assignments
                   </div>
                 )}
+              </div>
+            )}
+
+            {hasAnyAssignments && (
+              <div className="flex gap-2 pt-2">
+                <Button
+                  onClick={saveVideoChanges}
+                  size="sm"
+                  className="text-xs bg-blue-600 hover:bg-blue-700"
+                >
+                  💾 Save & Apply Changes
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={resetVideoAssignments}
+                  className="text-xs"
+                >
+                  Reset All
+                </Button>
               </div>
             )}
           </div>
@@ -218,6 +240,13 @@ const VideoConfigurationSection: React.FC<VideoConfigurationSectionProps> = ({
 
           {selectedVideoFile && (
             <div className="flex gap-2">
+              <Button
+                onClick={saveVideoChanges}
+                size="sm"
+                className="text-xs bg-blue-600 hover:bg-blue-700"
+              >
+                💾 Save & Apply Changes
+              </Button>
               <Button
                 variant="outline"
                 size="sm"

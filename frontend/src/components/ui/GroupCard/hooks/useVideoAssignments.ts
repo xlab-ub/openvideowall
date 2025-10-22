@@ -64,7 +64,7 @@ const loadVideoAssignments = (groupId: string, screenCount: number): { assignmen
   };
 };
 
-export const useVideoAssignments = (groupId: string, screenCount: number, onVideoChange?: () => void) => {
+export const useVideoAssignments = (groupId: string, screenCount: number, onVideoChange?: () => void, enableAutoRestart: boolean = true) => {
   const [videoAssignments, setVideoAssignments] = useState<VideoAssignment[]>([]);
   const [showVideoConfig, setShowVideoConfig] = useState(false);
   const [selectedVideoFile, setSelectedVideoFile] = useState<string>('');
@@ -94,8 +94,8 @@ export const useVideoAssignments = (groupId: string, screenCount: number, onVide
     // Save to localStorage immediately when user makes changes
     saveVideoAssignments(groupId, newAssignments, selectedVideoFile);
 
-    // Trigger restart if callback provided
-    if (onVideoChange) {
+    // Trigger restart if callback provided and auto-restart is enabled
+    if (onVideoChange && enableAutoRestart) {
       // Use a small delay to ensure state is updated
       setTimeout(() => {
         restartWithCurrentState();
@@ -119,12 +119,20 @@ export const useVideoAssignments = (groupId: string, screenCount: number, onVide
     setSelectedVideoFile(fileName);
     saveVideoAssignments(groupId, videoAssignments, fileName);
     
-    // Trigger restart if callback provided
-    if (onVideoChange) {
+    // Trigger restart if callback provided and auto-restart is enabled
+    if (onVideoChange && enableAutoRestart) {
       // Use a small delay to ensure state is updated
       setTimeout(() => {
         restartWithCurrentState();
       }, 100);
+    }
+  };
+
+  // Manual save function that always triggers restart
+  const saveVideoChanges = async () => {
+    if (onVideoChange) {
+      console.log(` Manual save triggered for group ${groupId}`);
+      await restartWithCurrentState();
     }
   };
 
@@ -191,6 +199,7 @@ export const useVideoAssignments = (groupId: string, screenCount: number, onVide
     handleVideoAssignmentChange,
     resetVideoAssignments,
     hasCompleteAssignments,
-    hasAnyAssignments
+    hasAnyAssignments,
+    saveVideoChanges // Manual save function
   };
 };

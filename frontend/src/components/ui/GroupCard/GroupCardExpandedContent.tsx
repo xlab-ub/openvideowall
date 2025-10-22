@@ -31,6 +31,7 @@ interface GroupCardExpandedContentProps {
   resetVideoAssignments: () => void;
   hasCompleteAssignments: boolean;
   hasAnyAssignments: boolean;
+  saveVideoChanges: () => Promise<void>;
   onDelete: (groupId: string, groupName: string) => void;
   onAssignClient?: (clientId: string, groupId: string) => void;
   
@@ -62,6 +63,7 @@ const GroupCardExpandedContent: React.FC<GroupCardExpandedContentProps> = ({
   resetVideoAssignments,
   hasCompleteAssignments,
   hasAnyAssignments,
+  saveVideoChanges,
   onDelete,
   onAssignClient,
   // 🆕 Screen assignment props
@@ -101,6 +103,7 @@ const GroupCardExpandedContent: React.FC<GroupCardExpandedContentProps> = ({
         resetVideoAssignments={resetVideoAssignments}
         hasAnyAssignments={hasAnyAssignments}
         hasCompleteAssignments={hasCompleteAssignments}
+        saveVideoChanges={saveVideoChanges}
       />
 
       {/* Assigned Clients */}
