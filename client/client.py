@@ -1662,8 +1662,8 @@ Note: Make sure the client window has focus for hotkeys to work.
                 elif not hasattr(self, 'last_heartbeat'):
                     self.last_heartbeat = current_time
                 
-                # Check for stream URL updates every 60 seconds
-                if hasattr(self, 'last_url_check') and (current_time - self.last_url_check) > 60:
+                # Check for stream URL updates every 5 seconds
+                if hasattr(self, 'last_url_check') and (current_time - self.last_url_check) > 5:
                     print(f" Checking for stream URL updates...")
                     if self._check_for_stream_url_update():
                         print(f" Stream URL updated, restarting player...")
