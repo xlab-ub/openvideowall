@@ -1448,51 +1448,62 @@ def resolve_stream_urls_for_group(group_id: str, group_name: str):
             logger.error(f"Group {group_id} not found")
             return
         
-        # Try to get stream IDs from active streaming first
+        # Try to get stream IDs from database first (most reliable)
         try:
-            try:
-                from blueprints.streaming.split_stream import get_active_stream_ids
-            except ImportError:
-                try:
-                    from blueprints.streaming.multi_stream import get_active_stream_ids
-                except ImportError:
-                    # Fallback function if import fails
-                    def get_active_stream_ids(group_id: str):
-                        """Get active stream IDs for a group"""
-                        return {}
-            
-            active_stream_ids = get_active_stream_ids(group_id)
+            from db.mongo import get_group_stream_ids
+            active_stream_ids = get_group_stream_ids(group_id)
             if active_stream_ids:
-                logger.info(f" Using active stream IDs: {active_stream_ids}")
+                logger.info(f" Using database stream IDs: {active_stream_ids}")
             else:
-                # Fallback: try group metadata
-                active_stream_ids = group.get("stream_ids", {})
-                if active_stream_ids:
-                    logger.info(f" Using group metadata stream IDs: {active_stream_ids}")
-                else:
-                    # Last resort: generate stream IDs
+                logger.warning(f" No database stream IDs found for group {group_name}, trying other sources...")
+                # Fallback to other methods if database doesn't have stream IDs
+                try:
                     try:
-                        from blueprints.streaming.split_stream import generate_stream_ids
+                        from blueprints.streaming.split_stream import get_active_stream_ids
                     except ImportError:
                         try:
-                            from blueprints.streaming.multi_stream import generate_stream_ids
+                            from blueprints.streaming.multi_stream import get_active_stream_ids
                         except ImportError:
                             # Fallback function if import fails
-                            def generate_stream_ids(base_stream_id: str, group_name: str, screen_count: int):
-                                """Generate stream IDs for a group"""
-                                stream_ids = {}
-                                
-                                # Combined stream ID
-                                stream_ids["test"] = f"{base_stream_id[:8]}"
-                                
-                                # Individual screen stream IDs
-                                for i in range(screen_count):
-                                    stream_ids[f"test{i}"] = f"{base_stream_id[:8]}_{i}"
-                                
-                                return stream_ids
-                    screen_count = group.get("screen_count", 2)
-                    active_stream_ids = generate_stream_ids(group_id, group_name, screen_count)
-                    logger.info(f" Generated fallback stream IDs: {active_stream_ids}")
+                            def get_active_stream_ids(group_id: str):
+                                """Get active stream IDs for a group"""
+                                return {}
+                    
+                    active_stream_ids = get_active_stream_ids(group_id)
+                    if active_stream_ids:
+                        logger.info(f" Using active stream IDs: {active_stream_ids}")
+                    else:
+                        # Fallback: try group metadata
+                        active_stream_ids = group.get("stream_ids", {})
+                        if active_stream_ids:
+                            logger.info(f" Using group metadata stream IDs: {active_stream_ids}")
+                        else:
+                            # Last resort: generate stream IDs
+                            try:
+                                from blueprints.streaming.split_stream import generate_stream_ids
+                            except ImportError:
+                                try:
+                                    from blueprints.streaming.multi_stream import generate_stream_ids
+                                except ImportError:
+                                    # Fallback function if import fails
+                                    def generate_stream_ids(base_stream_id: str, group_name: str, screen_count: int):
+                                        """Generate stream IDs for a group"""
+                                        stream_ids = {}
+                                        
+                                        # Combined stream ID
+                                        stream_ids["test"] = f"{base_stream_id[:8]}"
+                                        
+                                        # Individual screen stream IDs
+                                        for i in range(screen_count):
+                                            stream_ids[f"test{i}"] = f"{base_stream_id[:8]}_{i}"
+                                        
+                                        return stream_ids
+                            screen_count = group.get("screen_count", 2)
+                            active_stream_ids = generate_stream_ids(group_id, group_name, screen_count)
+                            logger.info(f" Generated fallback stream IDs: {active_stream_ids}")
+                except Exception as e2:
+                    logger.error(f"Error getting fallback stream IDs: {e2}")
+                    return
         except Exception as e:
             logger.error(f"Error getting active stream IDs: {e}")
             return

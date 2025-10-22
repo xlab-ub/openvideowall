@@ -350,13 +350,15 @@ def assign_client_to_screen():
             }), 409
         
         # The stream URL will be resolved when client calls wait_for_assignment
+        # BUT: Don't reset stream_assignment and stream_url if they already exist
         client_data = {
             "group_id": group_id,
             "group_name": group_name,  # Store group name too
             "screen_number": screen_number,
-            "stream_assignment": None,  # Will be set to actual FFmpeg stream ID when streaming starts
+            "stream_assignment": client.get("stream_assignment"),  # Keep existing if present
             "srt_ip": srt_ip,  # Store this for later URL generation
-            "stream_url": None,  # No URL yet - will be resolved when streaming starts
+            "stream_url": client.get("stream_url"),  # Keep existing if present
+            "stream_id": client.get("stream_id"),  # Keep existing if present
             "assigned_at": time.time(),
             "assignment_status": "screen_assigned"
         }
