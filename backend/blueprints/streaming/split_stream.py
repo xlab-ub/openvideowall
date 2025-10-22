@@ -489,6 +489,14 @@ def start_split_screen_srt():
         base_stream_id = group_id  # Use full group ID like client management
         stream_ids = generate_stream_ids(base_stream_id, group_name, screen_count)
         
+        # Save stream IDs to database for reliable retrieval
+        try:
+            from db.mongo import save_group_stream_ids
+            save_group_stream_ids(group_id, group_name, stream_ids)
+            logger.info(f"💾 Saved stream IDs to database: {stream_ids}")
+        except Exception as e:
+            logger.warning(f"Could not save stream IDs to database: {e}")
+        
         # Verify video file exists and get full path
         file_path = os.path.join("uploads", video_file)
         if not os.path.exists(file_path):

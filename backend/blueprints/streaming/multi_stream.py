@@ -400,6 +400,14 @@ def start_multi_video_srt():
         stream_ids = generate_stream_ids(base_stream_id, group_name, screen_count)
         set_active_stream_ids(group_id, stream_ids)
         
+        # Save stream IDs to database for reliable retrieval
+        try:
+            from db.mongo import save_group_stream_ids
+            save_group_stream_ids(group_id, group_name, stream_ids)
+            logger.info(f"💾 Saved stream IDs to database: {stream_ids}")
+        except Exception as e:
+            logger.warning(f"Could not save stream IDs to database: {e}")
+        
         # Wait for SRT server
         try:
             srt_status = SRTService.monitor_srt_server(srt_ip, srt_port, timeout=5)

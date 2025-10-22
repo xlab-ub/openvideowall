@@ -876,3 +876,43 @@ def get_group_from_docker(group_id: str) -> Optional[Dict[str, Any]]:
             "container_id": f"mock-{group_id[:8]}",
             "ports": {"srt_port": 10080}
         }
+
+
+def get_group_stream_ids():
+    """
+    Get stream IDs for a group from database
+    """
+    try:
+        data = request.get_json() or {}
+        group_id = data.get("group_id")
+        
+        if not group_id:
+            return jsonify({"error": "group_id is required"}), 400
+        
+        logger.info(f"Getting stream IDs for group: {group_id}")
+        
+        # Get stream IDs from database
+        from db.mongo import get_group_stream_ids
+        stream_ids = get_group_stream_ids(group_id)
+        
+        if stream_ids:
+            logger.info(f"Found stream IDs in database: {stream_ids}")
+            return jsonify({
+                "success": True,
+                "group_id": group_id,
+                "stream_ids": stream_ids
+            }), 200
+        else:
+            logger.warning(f"No stream IDs found in database for group: {group_id}")
+            return jsonify({
+                "success": False,
+                "message": f"No stream IDs found for group {group_id}",
+                "group_id": group_id
+            }), 404
+            
+    except Exception as e:
+        logger.error(f"Error getting group stream IDs: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500

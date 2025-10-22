@@ -145,27 +145,16 @@ def update_client_assignments_after_restart(group_id: str, group_name: str):
         
         logger.info(f"Found {len(group_clients)} clients assigned to group {group_name}")
         
-        # Extract current FFmpeg stream IDs with retry mechanism
-        screen_count = 4  # Default, could be made dynamic
-        ffmpeg_stream_ids = {}
+        # Get stream IDs from database instead of extracting from FFmpeg
+        from db.mongo import get_group_stream_ids
+        db_stream_ids = get_group_stream_ids(group_id)
         
-        # Try multiple times to get FFmpeg stream IDs
-        for attempt in range(3):
-            logger.info(f"Attempt {attempt + 1}/3 to extract FFmpeg stream IDs...")
-            ffmpeg_stream_ids = extract_ffmpeg_stream_ids(group_id, group_name, screen_count)
-            
-            if ffmpeg_stream_ids:
-                logger.info(f"Successfully extracted FFmpeg stream IDs: {ffmpeg_stream_ids}")
-                break
-            else:
-                logger.warning(f"Attempt {attempt + 1} failed to extract FFmpeg stream IDs")
-                if attempt < 2:  # Don't sleep on last attempt
-                    time.sleep(2)  # Wait before retry
-        
-        if not ffmpeg_stream_ids:
-            logger.error(f"Failed to extract FFmpeg stream IDs after 3 attempts for group {group_name}")
-            logger.error(f"This means clients will get fallback stream IDs (screen0...)")
+        if not db_stream_ids:
+            logger.error(f"No database stream IDs found for group {group_name}")
+            logger.error(f"This means streaming may not be active or database is not accessible")
             return
+        
+        logger.info(f"Found database stream IDs: {db_stream_ids}")
         
         # Update each client's stream assignment
         for client_id, client in group_clients:
@@ -176,27 +165,33 @@ def update_client_assignments_after_restart(group_id: str, group_name: str):
                 
                 logger.info(f"Updating client {client_id}: status={assignment_status}, screen={screen_number}, stream={stream_assignment}")
                 
+                # Check if client already has a valid stream ID (not screen0...)
+                existing_stream_id = client.get("stream_id")
+                if existing_stream_id and not existing_stream_id.startswith("screen"):
+                    logger.info(f"  Client {client_id} already has valid stream ID ({existing_stream_id}), skipping update")
+                    continue
+                
                 # Determine the correct stream ID based on assignment type
                 if assignment_status == "screen_assigned" and screen_number is not None:
-                    # Screen assignment - use screen-specific stream ID
+                    # Screen assignment - use screen-specific stream ID from database
                     stream_key = f"test{screen_number}"
-                    actual_stream_id = ffmpeg_stream_ids.get(stream_key)
+                    actual_stream_id = db_stream_ids.get(stream_key)
                     
                     if actual_stream_id:
                         logger.info(f"  Screen {screen_number} -> Stream ID: {actual_stream_id}")
                     else:
-                        # Fallback to base stream ID with screen number
-                        base_stream_id = ffmpeg_stream_ids.get("base")
+                        # Try to construct from base stream ID
+                        base_stream_id = db_stream_ids.get("base")
                         if base_stream_id:
                             actual_stream_id = f"{base_stream_id}_{screen_number}"
-                            logger.info(f"  Fallback: Screen {screen_number} -> Stream ID: {actual_stream_id}")
+                            logger.info(f"  Constructed: Screen {screen_number} -> Stream ID: {actual_stream_id}")
                         else:
-                            actual_stream_id = f"screen{screen_number}"
-                            logger.warning(f"  No FFmpeg stream ID found, using fallback: {actual_stream_id}")
+                            logger.error(f"  No database stream ID found for screen {screen_number}, skipping client")
+                            continue
                 
                 elif assignment_status == "stream_assigned" and stream_assignment:
                     # Stream assignment - use the assigned stream
-                    actual_stream_id = ffmpeg_stream_ids.get(stream_assignment, stream_assignment)
+                    actual_stream_id = db_stream_ids.get(stream_assignment, stream_assignment)
                     logger.info(f"  Stream assignment {stream_assignment} -> Stream ID: {actual_stream_id}")
                 
                 else:
@@ -836,78 +831,73 @@ def wait_for_assignment():
                     logger.warning("Could not import streaming modules to get active stream IDs")
                     current_stream_ids = {}
             
-            # Always check for stream URL updates to ensure we have the correct stream ID
-            if not stream_url or current_stream_ids or True:  # Always rebuild to get latest stream ID
+            # Only rebuild stream URL if client doesn't have one or if stream IDs have changed
+            should_rebuild = False
+            
+            # Check if client already has a valid stream URL and stream ID
+            existing_stream_url = client.get("stream_url")
+            existing_stream_id = client.get("stream_id")
+            
+            if not existing_stream_url or not existing_stream_id:
+                logger.info(f" Client {client_id} missing stream URL or ID, rebuilding...")
+                should_rebuild = True
+            elif existing_stream_id.startswith("screen"):
+                logger.error(f" Client {client_id} has invalid stream ID ({existing_stream_id}) - streaming may not be active")
+                return jsonify({
+                    "success": False,
+                    "status": "invalid_stream_id",
+                    "message": f"Client has invalid stream ID ({existing_stream_id}). Streaming may not be active.",
+                    "group_id": group_id,
+                    "group_name": group_name,
+                    "client_id": client_id
+                }), 503
+            else:
+                logger.info(f" Client {client_id} already has valid stream ID ({existing_stream_id}), skipping rebuild")
+                should_rebuild = False
+            
+            if should_rebuild:
                 if assignment_status == "screen_assigned":
                     # For screen assignment, use the correct stream ID format that matches FFmpeg
                     screen_number = client.get("screen_number", 0)
                     
-                    # Use the new function to extract actual FFmpeg stream IDs
-                    from .client_utils import extract_ffmpeg_stream_ids
+                    # Use database stream IDs instead of extracting from FFmpeg
+                    from db.mongo import get_group_stream_ids
+                    db_stream_ids = get_group_stream_ids(group_id)
                     
-                    try:
-                        group_id = client.get("group_id", "unknown")
-                        group_name = client.get("group_name", "unknown")
-                        screen_count = client.get("screen_count", 2)
-                        
-                        ffmpeg_stream_ids = extract_ffmpeg_stream_ids(group_id, group_name, screen_count)
+                    if db_stream_ids:
+                        logger.info(f" Using stream IDs from database: {db_stream_ids}")
                         screen_key = f"test{screen_number}"
                         
-                        if screen_key in ffmpeg_stream_ids:
-                            actual_stream_id = ffmpeg_stream_ids[screen_key]
-                            logger.info(f" Using actual FFmpeg stream ID for screen {screen_number}: {actual_stream_id}")
+                        if screen_key in db_stream_ids:
+                            actual_stream_id = db_stream_ids[screen_key]
+                            logger.info(f" Using database stream ID for screen {screen_number}: {actual_stream_id}")
                         else:
-                            # Fallback 1: try to construct from base stream ID
-                            base_stream_id = ffmpeg_stream_ids.get("base")
+                            # Try to construct from base stream ID
+                            base_stream_id = db_stream_ids.get("base")
                             if base_stream_id:
                                 actual_stream_id = f"{base_stream_id}_{screen_number}"
-                                logger.info(f" Constructed stream ID from base: {actual_stream_id}")
+                                logger.info(f" Constructed stream ID from database base: {actual_stream_id}")
                             else:
-                                # Fallback 2: try to get from group's stored stream IDs
-                                try:
-                                    from ..streaming.multi_stream import get_active_stream_ids
-                                    stored_stream_ids = get_active_stream_ids(group_id)
-                                    if stored_stream_ids:
-                                        screen_key = f"test{screen_number}"
-                                        if screen_key in stored_stream_ids:
-                                            actual_stream_id = stored_stream_ids[screen_key]
-                                            logger.info(f" Using stored stream ID for screen {screen_number}: {actual_stream_id}")
-                                        else:
-                                            # Try to construct from stored base
-                                            base_id = stored_stream_ids.get("test", "")
-                                            if base_id:
-                                                actual_stream_id = f"{base_id}_{screen_number}"
-                                                logger.info(f" Constructed from stored base: {actual_stream_id}")
-                                            else:
-                                                actual_stream_id = f"screen{screen_number}"
-                                                logger.warning(f" No stored stream ID found, using fallback: {actual_stream_id}")
-                                    else:
-                                        actual_stream_id = f"screen{screen_number}"
-                                        logger.warning(f" No stored stream IDs available, using fallback: {actual_stream_id}")
-                                except Exception as e2:
-                                    logger.error(f" Error getting stored stream IDs: {e2}")
-                                    actual_stream_id = f"screen{screen_number}"
-                                    logger.warning(f" Using final fallback stream ID: {actual_stream_id}")
-                    except Exception as e:
-                        logger.error(f" Error getting stream ID from FFmpeg: {e}")
-                        # Try stored stream IDs as fallback
-                        try:
-                            from ..streaming.multi_stream import get_active_stream_ids
-                            stored_stream_ids = get_active_stream_ids(group_id)
-                            if stored_stream_ids:
-                                screen_key = f"test{screen_number}"
-                                if screen_key in stored_stream_ids:
-                                    actual_stream_id = stored_stream_ids[screen_key]
-                                    logger.info(f" Using stored stream ID after FFmpeg error: {actual_stream_id}")
-                                else:
-                                    actual_stream_id = f"screen{screen_number}"
-                                    logger.warning(f" Using fallback after FFmpeg error: {actual_stream_id}")
-                            else:
-                                actual_stream_id = f"screen{screen_number}"
-                                logger.warning(f" Using fallback after FFmpeg error: {actual_stream_id}")
-                        except Exception as e2:
-                            actual_stream_id = f"screen{screen_number}"
-                            logger.warning(f" Using final fallback after FFmpeg error: {actual_stream_id}")
+                                # No database stream IDs found - return error instead of fallback
+                                logger.error(f" No database stream IDs found for screen {screen_number}")
+                                return jsonify({
+                                    "success": False,
+                                    "status": "stream_id_not_found",
+                                    "message": f"No database stream IDs found for screen {screen_number}. Streaming may not be active.",
+                                    "group_id": group_id,
+                                    "group_name": group_name,
+                                    "screen_number": screen_number
+                                }), 503
+                    else:
+                        logger.error(f" No database stream IDs found for group {group_id}")
+                        return jsonify({
+                            "success": False,
+                            "status": "stream_id_not_found",
+                            "message": f"No database stream IDs found for group {group_id}. Streaming may not be active.",
+                            "group_id": group_id,
+                            "group_name": group_name,
+                            "screen_number": screen_number
+                        }), 503
                 else:
                     # For stream assignment, use the assigned stream
                     actual_stream_id = client.get("stream_assignment", "default")
@@ -927,6 +917,11 @@ def wait_for_assignment():
                     state.add_client(client_id, client)
                 else:
                     state.clients[client_id] = client
+            else:
+                # Use existing stream URL and ID without rebuilding
+                stream_url = existing_stream_url
+                actual_stream_id = existing_stream_id
+                logger.info(f" Using existing stream URL and ID for client {client_id}")
             
             # Enhanced validation before returning ready status
             logger.info(f"🔍 RUNNING STREAM ASSIGNMENT VALIDATION...")

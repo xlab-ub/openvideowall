@@ -63,6 +63,7 @@ def ensure_indexes():
         db["client_assignments"].create_index("hostname", unique=True)
         db["client_assignments"].create_index("client_id")
         db["client_assignments"].create_index("group_id")
+        db["group_stream_ids"].create_index("group_id", unique=True)
     except Exception:
         # Non-fatal
         pass
@@ -181,6 +182,63 @@ def remove_client_assignment(hostname: str) -> bool:
         return True
     except Exception as e:
         print(f"Error removing client assignment: {e}")
+        return False
+
+
+def save_group_stream_ids(group_id: str, group_name: str, stream_ids: Dict[str, str]) -> bool:
+    """Save stream IDs for a group to database"""
+    db = get_mongo_db()
+    if db is None:
+        return False
+    
+    try:
+        stream_data = {
+            "group_id": group_id,
+            "group_name": group_name,
+            "stream_ids": stream_ids,
+            "created_at": int(time.time()),
+            "updated_at": int(time.time())
+        }
+        
+        # Upsert the stream IDs
+        db["group_stream_ids"].update_one(
+            {"group_id": group_id},
+            {"$set": stream_data},
+            upsert=True
+        )
+        return True
+    except Exception as e:
+        print(f"Error saving group stream IDs: {e}")
+        return False
+
+
+def get_group_stream_ids(group_id: str) -> Optional[Dict[str, str]]:
+    """Get stream IDs for a group from database"""
+    db = get_mongo_db()
+    if db is None:
+        return None
+    
+    try:
+        result = db["group_stream_ids"].find_one({"group_id": group_id}, {"_id": 0})
+        if result:
+            return result.get("stream_ids", {})
+        return None
+    except Exception as e:
+        print(f"Error getting group stream IDs: {e}")
+        return None
+
+
+def remove_group_stream_ids(group_id: str) -> bool:
+    """Remove stream IDs for a group from database"""
+    db = get_mongo_db()
+    if db is None:
+        return False
+    
+    try:
+        db["group_stream_ids"].delete_one({"group_id": group_id})
+        return True
+    except Exception as e:
+        print(f"Error removing group stream IDs: {e}")
         return False
 
 
