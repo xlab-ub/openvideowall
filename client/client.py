@@ -485,15 +485,30 @@ class UnifiedMultiScreenClient:
                     print(f"   ✅ Window moved successfully!")
                     time.sleep(1)
                     
-                    # Force fullscreen
+                    # Force fullscreen with multiple attempts
                     print(f"   Making window fullscreen...")
-                    subprocess.run(['xdotool', 'windowactivate', '--sync', window['id']], capture_output=True)
-                    time.sleep(0.5)
-                    subprocess.run(['xdotool', 'key', 'f'], capture_output=True)
-                    time.sleep(0.5)
-                    subprocess.run(['wmctrl', '-ir', window['id'], '-b', 'add,fullscreen'], capture_output=True)
+                    for fullscreen_attempt in range(3):
+                        subprocess.run(['xdotool', 'windowactivate', '--sync', window['id']], capture_output=True)
+                        time.sleep(0.5)
+                        subprocess.run(['xdotool', 'key', 'f'], capture_output=True)
+                        time.sleep(0.5)
+                        subprocess.run(['wmctrl', '-ir', window['id'], '-b', 'add,fullscreen'], capture_output=True)
+                        time.sleep(0.5)
+                        
+                        # Check if window is now fullscreen
+                        check_result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
+                        if check_result.returncode == 0:
+                            for line in check_result.stdout.split('\n'):
+                                if window['id'] in line:
+                                    parts = line.split()
+                                    if len(parts) >= 6:
+                                        current_x, current_y = int(parts[2]), int(parts[3])
+                                        if current_x == x and current_y == y:
+                                            print(f"   ✅ Window positioned and fullscreened!")
+                                            return
+                        print(f"   Retry fullscreen attempt {fullscreen_attempt + 1}/3...")
                     
-                    print(f"   ✅ Window positioned and fullscreened!")
+                    print(f"   ⚠️ Fullscreen may not be perfect, but window is positioned")
                     return
                 else:
                     print(f"   ❌ Failed to move window: {move_result.stderr}")
@@ -1522,12 +1537,12 @@ Note: Make sure the client window has focus for hotkeys to work.
                         # Use POST for heartbeat
                         response = requests.post(endpoint, 
                                                json={"client_id": self.client_id}, 
-                                               timeout=5)
+                                               timeout=3)
                     else:
                         # Use GET for wait_for_assignment
                         response = requests.get(endpoint, 
                                               params={"client_id": self.client_id}, 
-                                              timeout=5)
+                                              timeout=3)
                     
                     if response.status_code == 200:
                         data = response.json()
@@ -1550,6 +1565,8 @@ Note: Make sure the client window has focus for hotkeys to work.
                             else:
                                 print(f" Stream URL unchanged: {new_stream_url}")
                                 return False
+                        else:
+                            print(f" Server response not successful: {data}")
                 except Exception as e:
                     print(f" Error with {endpoint}: {e}")
                     continue
@@ -1662,8 +1679,8 @@ Note: Make sure the client window has focus for hotkeys to work.
                 elif not hasattr(self, 'last_heartbeat'):
                     self.last_heartbeat = current_time
                 
-                # Check for stream URL updates every 3 seconds (more frequent)
-                if hasattr(self, 'last_url_check') and (current_time - self.last_url_check) > 3:
+                # Check for stream URL updates every 2 seconds (very frequent)
+                if hasattr(self, 'last_url_check') and (current_time - self.last_url_check) > 2:
                     print(f" 🔍 Checking for stream URL updates...")
                     if self._check_for_stream_url_update():
                         print(f" 🔄 Stream URL updated, restarting player...")
@@ -1672,15 +1689,26 @@ Note: Make sure the client window has focus for hotkeys to work.
                             self.player_process.terminate()
                             # Wait for process to actually stop
                             try:
-                                self.player_process.wait(timeout=2)
+                                self.player_process.wait(timeout=3)
                             except subprocess.TimeoutExpired:
                                 print(f" Force killing player process...")
                                 self.player_process.kill()
+                                try:
+                                    self.player_process.wait(timeout=1)
+                                except subprocess.TimeoutExpired:
+                                    print(f" Process still running, continuing...")
                             self.player_process = None
                         # Don't clear current_stream_url here - it was already updated in _check_for_stream_url_update
                         self.current_stream_version = None
                         self.current_player_type = None
                         print(f" ✅ Player will restart with new URL on next iteration")
+                        
+                        # Force immediate restart instead of waiting for next iteration
+                        print(f" 🚀 Forcing immediate restart with new stream...")
+                        if self.play_stream():
+                            print(f" 🎯 Forcing window positioning after restart...")
+                            time.sleep(2)  # Wait for window to appear
+                            self._position_window_on_monitor()
                     self.last_url_check = current_time
                 elif not hasattr(self, 'last_url_check'):
                     self.last_url_check = current_time
@@ -1757,6 +1785,11 @@ Note: Make sure the client window has focus for hotkeys to work.
                     if not self.player_process or self.player_process.poll() is not None:
                         print(f" Stream URL available but player not running, starting player...")
                         if self.play_stream():
+                            # Force window positioning after starting player
+                            print(f" 🎯 Forcing window positioning after player start...")
+                            time.sleep(2)  # Wait for window to appear
+                            self._position_window_on_monitor()
+                            
                             # Monitor the player
                             stop_reason = self.monitor_player()
                             
@@ -1790,7 +1823,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                             if self._shutdown_event.wait(timeout=10):
                                 break
                     else:
-                        # Player is running, check if it's still healthy
+                        # Player is running, check if it's still healthy and positioned correctly
                         if (hasattr(self, 'last_health_check') and 
                             (current_time - self.last_health_check) > 15):
                             print(f" 🏥 Checking player health...")
@@ -1801,6 +1834,10 @@ Note: Make sure the client window has focus for hotkeys to work.
                                 self.current_stream_version = None
                                 self.current_player_type = None
                                 self.player_process = None
+                            else:
+                                # Player is running, check if window is positioned correctly
+                                print(f" 🎯 Checking window positioning...")
+                                self._position_window_on_monitor()
                             self.last_health_check = current_time
                         elif not hasattr(self, 'last_health_check'):
                             self.last_health_check = current_time
