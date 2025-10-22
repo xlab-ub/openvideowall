@@ -14,7 +14,8 @@ from .client_endpoints import (
     wait_for_assignment,
     register_client_legacy,
     wait_for_stream_legacy,
-    client_heartbeat
+    client_heartbeat,
+    kill_old_stream
 )
 from .admin_endpoints import (
     assign_client_to_group,
@@ -85,6 +86,11 @@ def health_check_route():
 def heartbeat_route():
     """Client heartbeat endpoint to keep connection alive"""
     return client_heartbeat()
+
+@client_bp.route("/kill_old_stream", methods=["POST"])
+def kill_old_stream_route():
+    """Client requests server to kill an old stream"""
+    return kill_old_stream()
 
 @client_bp.route("/debug/state", methods=["GET"])
 def debug_state_route():

@@ -80,6 +80,7 @@ class UnifiedMultiScreenClient:
         
         # Stream management
         self.current_stream_url = None
+        self.current_stream_id = None
         self.current_stream_version = None
         self.current_player_type = None
         self.player_process = None
@@ -981,7 +982,8 @@ Note: Make sure the client window has focus for hotkeys to work.
                     original_stream_url = data.get('stream_url')
                     self.current_stream_url = self.fix_stream_url(original_stream_url)
                     
-                    # Handle stream version
+                    # Handle stream ID and version
+                    self.current_stream_id = data.get('stream_id')
                     server_version = data.get('stream_version')
                     if server_version is not None:
                         self.current_stream_version = server_version
@@ -1054,13 +1056,19 @@ Note: Make sure the client window has focus for hotkeys to work.
         return False
 
     def send_heartbeat(self) -> bool:
-        """Send heartbeat to server to keep connection alive and check for updates"""
+        """Send heartbeat to server to keep connection alive and check for stream updates"""
         try:
+            # Send current stream info to server
+            heartbeat_data = {
+                "client_id": self.client_id,
+                "current_stream_id": self.current_stream_id if hasattr(self, 'current_stream_id') else None,
+                "current_stream_url": self.current_stream_url,
+                "current_stream_version": self.current_stream_version if hasattr(self, 'current_stream_version') else None
+            }
+            
             response = requests.post(
                 f"{self.server_url}/api/clients/heartbeat",
-                json={
-                    "client_id": self.client_id
-                },
+                json=heartbeat_data,
                 timeout=10
             )
             data = response.json()
@@ -1068,22 +1076,76 @@ Note: Make sure the client window has focus for hotkeys to work.
             if data.get("success", False):
                 print(f" Heartbeat sent successfully")
                 
-                # Check if server has updated our stream URL
-                if "stream_url" in data and data["stream_url"] != self.current_stream_url:
-                    print(f" Server updated stream URL during heartbeat:")
-                    print(f"   Old: {self.current_stream_url}")
-                    print(f"   New: {data['stream_url']}")
-                    self.current_stream_url = data["stream_url"]
-                    self.current_stream_version = data.get("stream_version", self.current_stream_version)
+                # Check if server has updated our stream
+                new_stream_id = data.get("stream_id")
+                new_stream_url = data.get("stream_url")
+                new_stream_version = data.get("stream_version")
+                
+                # Check if stream has changed
+                if new_stream_id and new_stream_id != getattr(self, 'current_stream_id', None):
+                    print(f" 🔄 Stream ID changed during heartbeat:")
+                    print(f"   Old Stream ID: {getattr(self, 'current_stream_id', 'None')}")
+                    print(f"   New Stream ID: {new_stream_id}")
+                    print(f"   Old URL: {self.current_stream_url}")
+                    print(f"   New URL: {new_stream_url}")
+                    
+                    # Request server to kill old stream
+                    if hasattr(self, 'current_stream_id') and self.current_stream_id:
+                        print(f" 🗑️ Requesting server to kill old stream: {self.current_stream_id}")
+                        try:
+                            kill_response = requests.post(
+                                f"{self.server_url}/api/clients/kill_old_stream",
+                                json={
+                                    "client_id": self.client_id,
+                                    "old_stream_id": self.current_stream_id
+                                },
+                                timeout=5
+                            )
+                            if kill_response.status_code == 200:
+                                print(f" ✅ Old stream kill request sent successfully")
+                            else:
+                                print(f" ⚠️ Failed to send kill request: {kill_response.status_code}")
+                        except Exception as e:
+                            print(f" ⚠️ Error sending kill request: {e}")
+                    
+                    # Update our stream info
+                    self.current_stream_id = new_stream_id
+                    self.current_stream_url = new_stream_url
+                    self.current_stream_version = new_stream_version
                     
                     # Restart ffplay if it's currently running
                     if self.player_process and self.player_process.poll() is None:
-                        print(f" Restarting ffplay with new URL...")
+                        print(f" 🔄 Restarting ffplay with new stream...")
                         self.player_process.terminate()
                         self.player_process = None
                         self.current_player_type = None
                     
                     return True
+                elif new_stream_url and new_stream_url != self.current_stream_url:
+                    print(f" 🔄 Stream URL updated during heartbeat:")
+                    print(f"   Old: {self.current_stream_url}")
+                    print(f"   New: {new_stream_url}")
+                    self.current_stream_url = new_stream_url
+                    self.current_stream_version = new_stream_version
+                    
+                    # Restart ffplay if it's currently running
+                    if self.player_process and self.player_process.poll() is None:
+                        print(f" 🔄 Restarting ffplay with new URL...")
+                        self.player_process.terminate()
+                        self.player_process = None
+                        self.current_player_type = None
+                    
+                    return True
+                else:
+                    # Stream unchanged, just update our info
+                    if new_stream_id:
+                        self.current_stream_id = new_stream_id
+                    if new_stream_url:
+                        self.current_stream_url = new_stream_url
+                    if new_stream_version:
+                        self.current_stream_version = new_stream_version
+                    
+                    print(f" 📊 Current stream: {getattr(self, 'current_stream_id', 'None')} - {self.current_stream_url[:50] if self.current_stream_url else 'None'}...")
                 
                 return True
             else:
@@ -1667,17 +1729,18 @@ Note: Make sure the client window has focus for hotkeys to work.
             
             # Step 2: Main loop - wait for assignment and play streams
             while self.running and not self._shutdown_event.is_set():
-                # Send periodic heartbeat to keep connection alive and check for URL updates
+                # Send periodic heartbeat to keep connection alive and check for stream updates
                 current_time = time.time()
-                if hasattr(self, 'last_heartbeat') and (current_time - self.last_heartbeat) > 30:
-                    print(f" Sending heartbeat to server...")
+                if hasattr(self, 'last_heartbeat') and (current_time - self.last_heartbeat) > 10:
+                    print(f" 💓 Sending heartbeat to server... (every 10s)")
                     if self.send_heartbeat():
                         self.last_heartbeat = current_time
-                        print(f" Heartbeat successful")
+                        print(f" ✅ Heartbeat successful")
                     else:
-                        print(f" Heartbeat failed, will retry...")
+                        print(f" ❌ Heartbeat failed, will retry...")
                 elif not hasattr(self, 'last_heartbeat'):
                     self.last_heartbeat = current_time
+                    print(f" 💓 Initial heartbeat timer set")
                 
                 # Check for stream URL updates every 2 seconds (very frequent)
                 if hasattr(self, 'last_url_check') and (current_time - self.last_url_check) > 2:
@@ -1737,6 +1800,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                 
                 # Only wait for assignment if we don't have a current stream
                 if not self.current_stream_url:
+                    print(f" 📡 No stream URL, waiting for assignment...")
                     # Wait for stream assignment
                     if self.wait_for_assignment():
                         if self._shutdown_event.is_set():
@@ -1757,6 +1821,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                                 print(f" Stream stopped ({stop_reason}), waiting for new assignment...")
                                 print(f" Client will stay connected and wait for new stream...")
                                 self.current_stream_url = None
+                                self.current_stream_id = None
                                 self.current_stream_version = None
                                 self.current_player_type = None
                                 # Clear any existing player process
@@ -1767,6 +1832,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                                 print(f"  Unexpected stop reason: {stop_reason}")
                                 print(f"  Treating as stream end, will wait for new assignment...")
                                 self.current_stream_url = None
+                                self.current_stream_id = None
                                 self.current_stream_version = None
                                 self.current_player_type = None
                                 if self.player_process:
@@ -1782,6 +1848,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                             break
                 else:
                     # We have a stream URL, check if we need to play it
+                    print(f" 📺 Have stream URL: {self.current_stream_url[:50]}...")
                     if not self.player_process or self.player_process.poll() is not None:
                         print(f" Stream URL available but player not running, starting player...")
                         if self.play_stream():
@@ -1803,6 +1870,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                                 print(f" Stream stopped ({stop_reason}), waiting for new assignment...")
                                 print(f" Client will stay connected and wait for new stream...")
                                 self.current_stream_url = None
+                                self.current_stream_id = None
                                 self.current_stream_version = None
                                 self.current_player_type = None
                                 # Clear any existing player process
@@ -1813,6 +1881,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                                 print(f"  Unexpected stop reason: {stop_reason}")
                                 print(f"  Treating as stream end, will wait for new assignment...")
                                 self.current_stream_url = None
+                                self.current_stream_id = None
                                 self.current_stream_version = None
                                 self.current_player_type = None
                                 if self.player_process:
@@ -1824,6 +1893,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                                 break
                     else:
                         # Player is running, check if it's still healthy and positioned correctly
+                        print(f" 🎬 Player running, monitoring...")
                         if (hasattr(self, 'last_health_check') and 
                             (current_time - self.last_health_check) > 15):
                             print(f" 🏥 Checking player health...")
@@ -1831,6 +1901,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                                 print(f" ⚠️ Player process has stopped unexpectedly")
                                 # Clear stream URL to force reassignment
                                 self.current_stream_url = None
+                                self.current_stream_id = None
                                 self.current_stream_version = None
                                 self.current_player_type = None
                                 self.player_process = None

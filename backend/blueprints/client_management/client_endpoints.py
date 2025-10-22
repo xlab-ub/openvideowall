@@ -677,8 +677,9 @@ def wait_for_assignment():
                 # Build the stream URL with the actual stream ID
                 stream_url = build_stream_url(group, actual_stream_id, group_name, srt_ip)
                 
-                # Update client with stream URL and current stream IDs
+                # Update client with stream URL, stream ID, and current stream IDs
                 client["stream_url"] = stream_url
+                client["stream_id"] = actual_stream_id
                 client["current_stream_ids"] = current_stream_ids
                 if hasattr(state, 'add_client'):
                     state.add_client(client_id, client)
@@ -690,6 +691,7 @@ def wait_for_assignment():
                 "success": True,
                 "status": "ready_to_play",
                 "message": "Stream is ready",
+                "stream_id": actual_stream_id,
                 "stream_url": stream_url,
                 "group_id": group_id,
                 "group_name": group_name,
@@ -722,14 +724,17 @@ def wait_for_assignment():
 @log_function_call
 def client_heartbeat():
     """
-    Client heartbeat endpoint to keep connection alive
-    Updates last_seen timestamp for the client
+    Client heartbeat endpoint to keep connection alive and handle stream updates
+    Updates last_seen timestamp for the client and returns current stream info
     """
     try:
         logger.info("==== CLIENT HEARTBEAT REQUEST ====")
         
         data = request.get_json() or {}
         client_id = data.get("client_id")
+        current_stream_id = data.get("current_stream_id")
+        current_stream_url = data.get("current_stream_url")
+        current_stream_version = data.get("current_stream_version")
         
         if not client_id:
             return jsonify({
@@ -751,6 +756,14 @@ def client_heartbeat():
         client["last_seen"] = current_time
         client["status"] = "active"
         
+        # Check if client's stream has changed
+        server_stream_id = client.get("stream_id")
+        server_stream_url = client.get("stream_url")
+        server_stream_version = client.get("stream_version")
+        
+        # Log stream status
+        logger.info(f"Client {client_id} heartbeat - Current stream: {current_stream_id} -> Server stream: {server_stream_id}")
+        
         # Save updated client data
         if hasattr(state, 'add_client'):
             state.add_client(client_id, client)
@@ -770,11 +783,13 @@ def client_heartbeat():
             "status": "active"
         }
         
-        # Include current stream URL and version if client has assignments
-        if client.get("stream_url"):
-            response_data["stream_url"] = client["stream_url"]
-        if client.get("stream_version"):
-            response_data["stream_version"] = client["stream_version"]
+        # Include current stream information if client has assignments
+        if server_stream_id:
+            response_data["stream_id"] = server_stream_id
+        if server_stream_url:
+            response_data["stream_url"] = server_stream_url
+        if server_stream_version:
+            response_data["stream_version"] = server_stream_version
         if client.get("assignment_status"):
             response_data["assignment_status"] = client["assignment_status"]
         
@@ -782,6 +797,62 @@ def client_heartbeat():
         
     except Exception as e:
         logger.error(f"Error in client_heartbeat: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            "success": False,
+            "error": f"Internal server error: {str(e)}"
+        }), 500
+
+
+@log_function_call
+def kill_old_stream():
+    """
+    Client requests server to kill an old stream that it's no longer using
+    """
+    try:
+        logger.info("==== KILL OLD STREAM REQUEST ====")
+        
+        data = request.get_json() or {}
+        client_id = data.get("client_id")
+        old_stream_id = data.get("old_stream_id")
+        
+        if not client_id:
+            return jsonify({
+                "success": False,
+                "error": "client_id is required"
+            }), 400
+            
+        if not old_stream_id:
+            return jsonify({
+                "success": False,
+                "error": "old_stream_id is required"
+            }), 400
+        
+        state = get_state()
+        client = state.get_client(client_id) if hasattr(state, 'get_client') else state.clients.get(client_id)
+        
+        if not client:
+            return jsonify({
+                "success": False,
+                "error": "Client not found"
+            }), 404
+        
+        logger.info(f"Client {client_id} requesting to kill old stream: {old_stream_id}")
+        
+        # TODO: Implement actual stream killing logic here
+        # For now, just log the request
+        logger.info(f"Old stream kill request received for stream {old_stream_id} from client {client_id}")
+        
+        return jsonify({
+            "success": True,
+            "message": f"Old stream {old_stream_id} kill request received",
+            "client_id": client_id,
+            "old_stream_id": old_stream_id
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error in kill_old_stream: {e}")
         import traceback
         logger.error(traceback.format_exc())
         return jsonify({
