@@ -232,7 +232,7 @@ def assign_client_to_stream():
             state.clients[client_id] = client
         
         # Save persistent assignment to database (stream assignment doesn't have screen number)
-        from ..db.mongo import save_client_assignment
+        from db.mongo import save_client_assignment
         hostname = client.get("hostname")
         if hostname:
             save_client_assignment(client_id, hostname, group_id, None, group_name)
@@ -371,7 +371,7 @@ def assign_client_to_screen():
             state.clients[client_id] = client
         
         # Save persistent assignment to database with monitor position
-        from ..db.mongo import save_client_assignment
+        from db.mongo import save_client_assignment
         hostname = client.get("hostname")
         if hostname:
             # Calculate monitor position based on screen number
@@ -538,7 +538,7 @@ def unassign_client():
                 }), 500
         
         # Remove persistent assignment if unassigning all or if no assignments remain
-        from ..db.mongo import remove_client_assignment
+        from db.mongo import remove_client_assignment
         hostname = client.get("hostname")
         if hostname and (unassign_type == "all" or client.get("assignment_status") == "waiting_for_assignment"):
             remove_client_assignment(hostname)

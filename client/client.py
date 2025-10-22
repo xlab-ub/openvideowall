@@ -519,11 +519,7 @@ class UnifiedMultiScreenClient:
                     print(f"   ✅ Window moved successfully!")
                     time.sleep(1)
                     
-                    # Force fullscreen using the improved method
-                    print(f"   Making window fullscreen...")
-                    self._force_fullscreen_for_window(window['id'], x, y)
-                    
-                    # Verify positioning and check for overlaps
+                    # Verify positioning first before fullscreen
                     time.sleep(1)
                     check_result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
                     if check_result.returncode == 0:
@@ -536,13 +532,20 @@ class UnifiedMultiScreenClient:
                                     current_h = int(parts[5]) if len(parts) > 5 else 1080
                                     
                                     if abs(current_x - x) < 100 and abs(current_y - y) < 100:
-                                        print(f"   ✅ Window positioned and fullscreened!")
+                                        print(f"   ✅ Window positioned correctly!")
                                         
-                                        # Check for overlaps with other clients
+                                        # Only then make fullscreen
+                                        print(f"   Making window fullscreen...")
+                                        self._force_fullscreen_for_window(window['id'], x, y)
+                                        
+                                        # Check for overlaps with other clients (but don't reposition)
                                         self._check_and_fix_overlaps(window['id'], x, y, current_x, current_y, current_w, current_h)
                                         return
+                                    else:
+                                        print(f"   ⚠️ Window not positioned correctly, skipping fullscreen")
+                                        return
                     
-                    print(f"   ⚠️ Window positioned, fullscreen may need adjustment")
+                    print(f"   ⚠️ Could not verify window position, skipping fullscreen")
                     return
                 else:
                     print(f"   ❌ Failed to move window: {move_result.stderr}")
@@ -626,6 +629,11 @@ class UnifiedMultiScreenClient:
     def _check_and_fix_overlaps(self, window_id, target_x, target_y, current_x, current_y, window_w, window_h):
         """Check for overlaps with other client windows and fix them"""
         try:
+            # Only check for overlaps if we're not already on the correct monitor
+            if abs(current_x - target_x) < 100 and abs(current_y - target_y) < 100:
+                # We're already on the correct monitor, no need to check overlaps
+                return
+            
             # Check if this window overlaps with other client windows
             result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
             if result.returncode == 0:
@@ -646,10 +654,10 @@ class UnifiedMultiScreenClient:
                                 if (current_x < other_x + other_w and current_x + window_w > other_x and
                                     current_y < other_y + other_h and current_y + window_h > other_y):
                                     
-                                    # Overlap detected! Force reposition to correct monitor
-                                    print(f"   ⚠️ Overlap detected! Forcing reposition to correct monitor")
-                                    self._force_fullscreen_for_window(window_id, target_x, target_y)
-                                    break
+                                    # Overlap detected! But only reposition if we're not on our assigned monitor
+                                    print(f"   ⚠️ Overlap detected with another client, but staying on assigned monitor")
+                                    # Don't force reposition if we're already on the correct monitor
+                                    return
                             except (ValueError, IndexError):
                                 continue
         except Exception as e:
@@ -1546,12 +1554,10 @@ Note: Make sure the client window has focus for hotkeys to work.
             print(f"   Status: Playing with SEI processing")
             self.logger.info(f"C++ Player started for SEI stream")
             
-            # Position window on the correct monitor immediately and aggressively
-            threading.Timer(0.5, self._position_window_on_monitor).start()   # Immediate attempt
-            threading.Timer(1.0, self._position_window_on_monitor).start()   # First retry
-            threading.Timer(2.0, self._position_window_on_monitor).start()   # Second retry
-            threading.Timer(3.0, self._position_window_on_monitor).start()   # Third retry
-            threading.Timer(5.0, self._position_window_on_monitor).start()   # Final retry
+            # Position window on the correct monitor immediately but less aggressively
+            threading.Timer(1.0, self._position_window_on_monitor).start()   # First attempt
+            threading.Timer(3.0, self._position_window_on_monitor).start()   # Second attempt
+            threading.Timer(5.0, self._position_window_on_monitor).start()   # Final attempt
             
             # Start fallback monitoring after initial positioning
             threading.Timer(15.0, self._start_fallback_monitor).start()
@@ -1772,15 +1778,13 @@ Note: Make sure the client window has focus for hotkeys to work.
             time.sleep(1)
             self._ensure_window_visible()
             
-            # Position window on the correct monitor immediately and aggressively
-            threading.Timer(0.5, self._position_window_on_monitor).start()   # Immediate attempt
-            threading.Timer(1.0, self._position_window_on_monitor).start()   # First retry
-            threading.Timer(2.0, self._position_window_on_monitor).start()   # Second retry
-            threading.Timer(3.0, self._position_window_on_monitor).start()   # Third retry
-            threading.Timer(5.0, self._position_window_on_monitor).start()   # Final retry
+            # Position window on the correct monitor immediately but less aggressively
+            threading.Timer(1.0, self._position_window_on_monitor).start()   # First attempt
+            threading.Timer(3.0, self._position_window_on_monitor).start()   # Second attempt
+            threading.Timer(5.0, self._position_window_on_monitor).start()   # Final attempt
             
-            # Force fullscreen immediately after positioning
-            threading.Timer(2.0, self._force_immediate_fullscreen).start()
+            # Force fullscreen after positioning
+            threading.Timer(3.0, self._force_immediate_fullscreen).start()
             
             # Start fallback monitoring after initial positioning
             threading.Timer(15.0, self._start_fallback_monitor).start()

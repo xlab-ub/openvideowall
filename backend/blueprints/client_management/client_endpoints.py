@@ -292,7 +292,7 @@ def register_client():
         action = "updated" if existing_client else "registered"
         
         # Check for persistent assignment first
-        from ..db.mongo import get_client_assignment, update_client_last_seen
+        from db.mongo import get_client_assignment, update_client_last_seen
         
         persistent_assignment = get_client_assignment(hostname)
         if persistent_assignment:
@@ -309,7 +309,7 @@ def register_client():
             monitor_y = persistent_assignment.get("monitor_y")
             
             # Check if group still exists
-            from ..group_management import get_group_by_id
+            from group_management import get_group_by_id
             group = get_group_by_id(group_id)
             if group:
                 logger.info(f"Group {group_id} exists, applying persistent assignment")
@@ -357,7 +357,7 @@ def register_client():
                 }), 200
             else:
                 logger.warning(f"Group {group_id} no longer exists, removing persistent assignment")
-                from ..db.mongo import remove_client_assignment
+                from db.mongo import remove_client_assignment
                 remove_client_assignment(hostname)
         
         # If client exists, preserve all existing data and just update heartbeat/status
