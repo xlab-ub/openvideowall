@@ -455,10 +455,13 @@ def wait_for_assignment():
         data = request.get_json() or {}
         client_id = data.get("client_id")
         
-        logger.info(f"Request data: {data}")
-        logger.info(f"Client ID: {client_id}")
+        logger.info(f"📋 WAIT FOR ASSIGNMENT DEBUG:")
+        logger.info(f"   Request Data: {data}")
+        logger.info(f"   Client ID: {client_id}")
+        logger.info(f"   Request Headers: {dict(request.headers)}")
         
         if not client_id:
+            logger.error("❌ WAIT FOR ASSIGNMENT FAILED: No client_id provided")
             return jsonify({
                 "success": False,
                 "status": "error",
@@ -466,16 +469,26 @@ def wait_for_assignment():
             }), 400
         
         state = get_state()  # Use the function defined at top of file
-        logger.info(f"State type: {type(state)}")
-        logger.info(f"State has clients: {hasattr(state, 'clients')}")
+        logger.info(f"🔍 STATE DEBUG:")
+        logger.info(f"   State Type: {type(state)}")
+        logger.info(f"   State Has Clients: {hasattr(state, 'clients')}")
         if hasattr(state, 'clients'):
-            logger.info(f"Available client IDs: {list(state.clients.keys())}")
+            logger.info(f"   Available Client IDs: {list(state.clients.keys())}")
+            logger.info(f"   Total Clients: {len(state.clients)}")
         
         client = state.get_client(client_id) if hasattr(state, 'get_client') else state.clients.get(client_id)
         
-        logger.info(f"Found client: {client is not None}")
+        logger.info(f"🔍 CLIENT LOOKUP DEBUG:")
+        logger.info(f"   Client Found: {client is not None}")
+        if client:
+            logger.info(f"   Client Data: {client}")
+            logger.info(f"   Client Assignment Status: {client.get('assignment_status', 'unknown')}")
+            logger.info(f"   Client Group ID: {client.get('group_id', 'none')}")
+            logger.info(f"   Client Stream Assignment: {client.get('stream_assignment', 'none')}")
+            logger.info(f"   Client Screen Number: {client.get('screen_number', 'none')}")
         
         if not client:
+            logger.error(f"❌ WAIT FOR ASSIGNMENT FAILED: Client {client_id} not found")
             return jsonify({
                 "success": False,
                 "status": "not_registered", 
@@ -697,7 +710,9 @@ def wait_for_assignment():
                     state.clients[client_id] = client
             
             # Enhanced validation before returning ready status
+            logger.info(f"🔍 RUNNING STREAM ASSIGNMENT VALIDATION...")
             validation_result = validate_stream_assignment(client, actual_stream_id, stream_url, group_name)
+            logger.info(f"   Validation Result: {validation_result}")
             
             # Return ready to play status with validation info
             response_data = {
@@ -716,8 +731,14 @@ def wait_for_assignment():
             }
             
             if not validation_result["is_valid"]:
-                logger.warning(f"Stream assignment validation failed for client {client_id}: {validation_result['errors']}")
+                logger.warning(f"⚠️ STREAM VALIDATION FAILED: Client {client_id}: {validation_result['errors']}")
                 response_data["warnings"] = validation_result["errors"]
+            else:
+                logger.info(f"✅ STREAM VALIDATION PASSED: Client {client_id}")
+            
+            logger.info(f"📤 READY TO PLAY RESPONSE DEBUG:")
+            logger.info(f"   Response Data: {response_data}")
+            logger.info(f"   Response Size: {len(str(response_data))} characters")
             
             return jsonify(response_data), 200
         
@@ -756,7 +777,15 @@ def client_heartbeat():
         current_stream_url = data.get("current_stream_url")
         current_stream_version = data.get("current_stream_version")
         
+        logger.info(f"🔔 HEARTBEAT DEBUG - Received heartbeat from client:")
+        logger.info(f"   Client ID: {client_id}")
+        logger.info(f"   Current Stream ID: {current_stream_id}")
+        logger.info(f"   Current Stream URL: {current_stream_url}")
+        logger.info(f"   Current Stream Version: {current_stream_version}")
+        logger.info(f"   Full Request Data: {data}")
+        
         if not client_id:
+            logger.error("❌ HEARTBEAT FAILED: No client_id provided")
             return jsonify({
                 "success": False,
                 "error": "client_id is required"
@@ -765,7 +794,14 @@ def client_heartbeat():
         state = get_state()
         client = state.get_client(client_id) if hasattr(state, 'get_client') else state.clients.get(client_id)
         
+        logger.info(f"🔍 CLIENT LOOKUP DEBUG:")
+        logger.info(f"   State Type: {type(state)}")
+        logger.info(f"   Client Found: {client is not None}")
+        if client:
+            logger.info(f"   Client Data: {client}")
+        
         if not client:
+            logger.error(f"❌ HEARTBEAT FAILED: Client {client_id} not found")
             return jsonify({
                 "success": False,
                 "error": "Client not found. Please register first."
@@ -776,10 +812,22 @@ def client_heartbeat():
         client["last_seen"] = current_time
         client["status"] = "active"
         
+        logger.info(f"📊 CLIENT STATUS UPDATE:")
+        logger.info(f"   Last Seen: {current_time}")
+        logger.info(f"   Status: active")
+        
         # Check if client's stream has changed
         server_stream_id = client.get("stream_id")
         server_stream_url = client.get("stream_url")
         server_stream_version = client.get("stream_version")
+        
+        logger.info(f"🔍 STREAM COMPARISON DEBUG:")
+        logger.info(f"   Client Stream ID: {current_stream_id}")
+        logger.info(f"   Server Stream ID: {server_stream_id}")
+        logger.info(f"   Client Stream URL: {current_stream_url}")
+        logger.info(f"   Server Stream URL: {server_stream_url}")
+        logger.info(f"   Client Stream Version: {current_stream_version}")
+        logger.info(f"   Server Stream Version: {server_stream_version}")
         
         # Enhanced stream validation
         stream_validation = {
@@ -787,6 +835,8 @@ def client_heartbeat():
             "warnings": [],
             "mismatches": []
         }
+        
+        logger.info(f"🔍 RUNNING STREAM VALIDATION...")
         
         # Validate stream ID consistency
         if current_stream_id and server_stream_id:
@@ -797,7 +847,11 @@ def client_heartbeat():
                     "client": current_stream_id,
                     "server": server_stream_id
                 })
-                logger.warning(f"Client {client_id} stream ID mismatch: client={current_stream_id}, server={server_stream_id}")
+                logger.warning(f"❌ STREAM ID MISMATCH: Client {client_id} stream ID mismatch: client={current_stream_id}, server={server_stream_id}")
+            else:
+                logger.info(f"✅ Stream ID validation passed")
+        else:
+            logger.info(f"ℹ️ Skipping stream ID validation - missing data")
         
         # Validate stream URL consistency
         if current_stream_url and server_stream_url:
@@ -807,7 +861,11 @@ def client_heartbeat():
                     "client": current_stream_url,
                     "server": server_stream_url
                 })
-                logger.warning(f"Client {client_id} stream URL mismatch: client={current_stream_url}, server={server_stream_url}")
+                logger.warning(f"⚠️ STREAM URL MISMATCH: Client {client_id} stream URL mismatch: client={current_stream_url}, server={server_stream_url}")
+            else:
+                logger.info(f"✅ Stream URL validation passed")
+        else:
+            logger.info(f"ℹ️ Skipping stream URL validation - missing data")
         
         # Validate stream version consistency
         if current_stream_version and server_stream_version:
@@ -817,11 +875,21 @@ def client_heartbeat():
                     "client": current_stream_version,
                     "server": server_stream_version
                 })
-                logger.warning(f"Client {client_id} stream version mismatch: client={current_stream_version}, server={server_stream_version}")
+                logger.warning(f"⚠️ STREAM VERSION MISMATCH: Client {client_id} stream version mismatch: client={current_stream_version}, server={server_stream_version}")
+            else:
+                logger.info(f"✅ Stream version validation passed")
+        else:
+            logger.info(f"ℹ️ Skipping stream version validation - missing data")
         
         # Log stream status with validation results
-        logger.info(f"Client {client_id} heartbeat - Current stream: {current_stream_id} -> Server stream: {server_stream_id}")
-        logger.info(f"Stream validation: valid={stream_validation['is_valid']}, warnings={len(stream_validation['warnings'])}, mismatches={len(stream_validation['mismatches'])}")
+        logger.info(f"📊 STREAM VALIDATION SUMMARY:")
+        logger.info(f"   Client {client_id} heartbeat - Current stream: {current_stream_id} -> Server stream: {server_stream_id}")
+        logger.info(f"   Validation Result: valid={stream_validation['is_valid']}, warnings={len(stream_validation['warnings'])}, mismatches={len(stream_validation['mismatches'])}")
+        
+        if stream_validation['mismatches']:
+            logger.warning(f"   Mismatches: {stream_validation['mismatches']}")
+        if stream_validation['warnings']:
+            logger.warning(f"   Warnings: {stream_validation['warnings']}")
         
         # Save updated client data
         if hasattr(state, 'add_client'):
@@ -858,6 +926,10 @@ def client_heartbeat():
             response_data["stream_assignment"] = client["stream_assignment"]
         if client.get("screen_number") is not None:
             response_data["screen_number"] = client["screen_number"]
+        
+        logger.info(f"📤 HEARTBEAT RESPONSE DEBUG:")
+        logger.info(f"   Response Data: {response_data}")
+        logger.info(f"   Response Size: {len(str(response_data))} characters")
         
         return jsonify(response_data), 200
         

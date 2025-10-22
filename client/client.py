@@ -978,6 +978,9 @@ Note: Make sure the client window has focus for hotkeys to work.
                 self.logger.debug(f"Server response: status={status}")
                 
                 if status == "ready_to_play":
+                    print(f"\n🎉 READY TO PLAY STATUS RECEIVED!")
+                    print(f"   Full Response Data: {data}")
+                    
                     # Stream is ready!
                     original_stream_url = data.get('stream_url')
                     self.current_stream_url = self.fix_stream_url(original_stream_url)
@@ -994,10 +997,24 @@ Note: Make sure the client window has focus for hotkeys to work.
                     group_name = data.get('group_name', 'unknown')
                     stream_assignment = data.get('stream_assignment', 'unknown')
                     
-                    # Enhanced validation: Verify stream ID matches server expectations
-                    self._validate_stream_assignment(data)
+                    print(f"\n📋 ASSIGNMENT DETAILS:")
+                    print(f"   Group: {group_name}")
+                    print(f"   Stream Assignment: {stream_assignment}")
+                    print(f"   Assignment Type: {data.get('assignment_status', 'unknown')}")
+                    print(f"   Screen Number: {data.get('screen_number', 'N/A')}")
+                    print(f"   Stream URL (original): {original_stream_url}")
+                    print(f"   Stream URL (fixed): {self.current_stream_url}")
+                    print(f"   Stream Version: {self.current_stream_version}")
+                    print(f"   Stream ID: {self.current_stream_id}")
+                    print(f"   Validation Data: {data.get('validation', 'N/A')}")
+                    print(f"   Warnings: {data.get('warnings', 'N/A')}")
                     
-                    print(f"\n ASSIGNMENT COMPLETE!")
+                    # Enhanced validation: Verify stream ID matches server expectations
+                    print(f"\n🔍 RUNNING STREAM ASSIGNMENT VALIDATION...")
+                    validation_result = self._validate_stream_assignment(data)
+                    print(f"   Validation Result: {'PASSED' if validation_result else 'FAILED'}")
+                    
+                    print(f"\n✅ ASSIGNMENT COMPLETE!")
                     print(f"   Group: {group_name}")
                     print(f"   Stream: {stream_assignment}")
                     print(f"   Assignment Type: {data.get('assignment_status', 'unknown')}")
@@ -1062,55 +1079,84 @@ Note: Make sure the client window has focus for hotkeys to work.
     def _validate_stream_assignment(self, assignment_data: dict) -> bool:
         """Validate that the stream assignment matches server expectations"""
         try:
+            print(f"\n🔍 STREAM ASSIGNMENT VALIDATION DEBUG:")
+            print(f"   Assignment Data: {assignment_data}")
+            
             server_stream_id = assignment_data.get('stream_id')
             server_stream_url = assignment_data.get('stream_url')
             server_group_name = assignment_data.get('group_name')
             server_stream_assignment = assignment_data.get('stream_assignment')
+            assignment_status = assignment_data.get('assignment_status')
+            screen_number = assignment_data.get('screen_number')
+            
+            print(f"   Server Stream ID: {server_stream_id}")
+            print(f"   Server Stream URL: {server_stream_url}")
+            print(f"   Server Group Name: {server_group_name}")
+            print(f"   Server Stream Assignment: {server_stream_assignment}")
+            print(f"   Assignment Status: {assignment_status}")
+            print(f"   Screen Number: {screen_number}")
+            print(f"   Client Stream ID: {self.current_stream_id}")
+            print(f"   Client Stream URL: {self.current_stream_url}")
+            
+            validation_passed = True
             
             # Validate stream ID is present and matches
             if not server_stream_id:
-                print(f" ⚠️ WARNING: No stream ID received from server")
-                return False
-                
-            if self.current_stream_id != server_stream_id:
-                print(f" ⚠️ WARNING: Stream ID mismatch!")
+                print(f" ❌ VALIDATION FAILED: No stream ID received from server")
+                validation_passed = False
+            elif self.current_stream_id != server_stream_id:
+                print(f" ❌ VALIDATION FAILED: Stream ID mismatch!")
                 print(f"   Client Stream ID: {self.current_stream_id}")
                 print(f"   Server Stream ID: {server_stream_id}")
-                return False
+                validation_passed = False
+            else:
+                print(f" ✅ Stream ID validation passed")
             
             # Validate stream URL contains expected group and stream ID
             if server_stream_url and server_group_name:
                 if server_group_name not in server_stream_url:
-                    print(f" ⚠️ WARNING: Stream URL doesn't contain group name!")
+                    print(f" ❌ VALIDATION FAILED: Stream URL doesn't contain group name!")
                     print(f"   Group: {server_group_name}")
                     print(f"   URL: {server_stream_url}")
-                    return False
+                    validation_passed = False
+                else:
+                    print(f" ✅ Group name validation passed")
                     
-                if server_stream_id not in server_stream_url:
-                    print(f" ⚠️ WARNING: Stream URL doesn't contain stream ID!")
+                if server_stream_id and server_stream_id not in server_stream_url:
+                    print(f" ❌ VALIDATION FAILED: Stream URL doesn't contain stream ID!")
                     print(f"   Stream ID: {server_stream_id}")
                     print(f"   URL: {server_stream_url}")
-                    return False
+                    validation_passed = False
+                else:
+                    print(f" ✅ Stream ID in URL validation passed")
+            else:
+                print(f" ⚠️ Skipping URL validation - missing data")
             
             # Validate assignment type consistency
-            assignment_status = assignment_data.get('assignment_status')
             if assignment_status == 'stream_assigned' and not server_stream_assignment:
-                print(f" ⚠️ WARNING: Stream assignment status but no stream assignment name!")
-                return False
-                
-            if assignment_status == 'screen_assigned' and not assignment_data.get('screen_number'):
-                print(f" ⚠️ WARNING: Screen assignment status but no screen number!")
-                return False
+                print(f" ❌ VALIDATION FAILED: Stream assignment status but no stream assignment name!")
+                validation_passed = False
+            elif assignment_status == 'screen_assigned' and screen_number is None:
+                print(f" ❌ VALIDATION FAILED: Screen assignment status but no screen number!")
+                validation_passed = False
+            else:
+                print(f" ✅ Assignment type consistency validation passed")
             
-            print(f" ✅ Stream assignment validation passed")
-            print(f"   Stream ID: {server_stream_id}")
-            print(f"   Group: {server_group_name}")
-            print(f"   Assignment: {server_stream_assignment}")
-            print(f"   Status: {assignment_status}")
-            return True
+            if validation_passed:
+                print(f" ✅ OVERALL VALIDATION PASSED")
+                print(f"   Stream ID: {server_stream_id}")
+                print(f"   Group: {server_group_name}")
+                print(f"   Assignment: {server_stream_assignment}")
+                print(f"   Status: {assignment_status}")
+            else:
+                print(f" ❌ OVERALL VALIDATION FAILED")
+            
+            return validation_passed
             
         except Exception as e:
             print(f" ❌ Error validating stream assignment: {e}")
+            import traceback
+            print(f"   Traceback: {traceback.format_exc()}")
             return False
 
     def send_heartbeat(self) -> bool:
@@ -1124,34 +1170,74 @@ Note: Make sure the client window has focus for hotkeys to work.
                 "current_stream_version": self.current_stream_version if hasattr(self, 'current_stream_version') else None
             }
             
+            print(f"\n🔔 HEARTBEAT DEBUG - Sending heartbeat to server:")
+            print(f"   Client ID: {self.client_id}")
+            print(f"   Current Stream ID: {heartbeat_data['current_stream_id']}")
+            print(f"   Current Stream URL: {heartbeat_data['current_stream_url']}")
+            print(f"   Current Stream Version: {heartbeat_data['current_stream_version']}")
+            print(f"   Server URL: {self.server_url}/api/clients/heartbeat")
+            
             response = requests.post(
                 f"{self.server_url}/api/clients/heartbeat",
                 json=heartbeat_data,
                 timeout=10
             )
+            
+            print(f"   Response Status: {response.status_code}")
             data = response.json()
+            print(f"   Response Data: {data}")
             
             if data.get("success", False):
-                print(f" Heartbeat sent successfully")
+                print(f" ✅ Heartbeat sent successfully")
+                
+                # Debug: Print all received data
+                print(f"\n📊 HEARTBEAT RESPONSE DEBUG:")
+                print(f"   Success: {data.get('success')}")
+                print(f"   Message: {data.get('message')}")
+                print(f"   Client ID: {data.get('client_id')}")
+                print(f"   Timestamp: {data.get('timestamp')}")
+                print(f"   Status: {data.get('status')}")
+                print(f"   Server Stream ID: {data.get('stream_id')}")
+                print(f"   Server Stream URL: {data.get('stream_url')}")
+                print(f"   Server Stream Version: {data.get('stream_version')}")
+                print(f"   Assignment Status: {data.get('assignment_status')}")
+                print(f"   Group Name: {data.get('group_name')}")
+                print(f"   Stream Assignment: {data.get('stream_assignment')}")
+                print(f"   Screen Number: {data.get('screen_number')}")
                 
                 # Check stream validation results
                 stream_validation = data.get("stream_validation", {})
                 if stream_validation:
+                    print(f"\n🔍 STREAM VALIDATION DEBUG:")
+                    print(f"   Is Valid: {stream_validation.get('is_valid', True)}")
+                    print(f"   Warnings Count: {len(stream_validation.get('warnings', []))}")
+                    print(f"   Mismatches Count: {len(stream_validation.get('mismatches', []))}")
+                    
                     if not stream_validation.get("is_valid", True):
-                        print(f" ⚠️ Stream validation failed!")
+                        print(f" ❌ Stream validation failed!")
                         for mismatch in stream_validation.get("mismatches", []):
-                            print(f"   {mismatch['type']}: client={mismatch['client']} != server={mismatch['server']}")
+                            print(f"   MISMATCH - {mismatch['type']}: client={mismatch['client']} != server={mismatch['server']}")
                     
                     warnings = stream_validation.get("warnings", [])
                     if warnings:
                         print(f" ⚠️ Stream validation warnings:")
                         for warning in warnings:
-                            print(f"   {warning['type']}: client={warning['client']} != server={warning['server']}")
+                            print(f"   WARNING - {warning['type']}: client={warning['client']} != server={warning['server']}")
+                else:
+                    print(f" ℹ️ No stream validation data received")
                 
                 # Check if server has updated our stream
                 new_stream_id = data.get("stream_id")
                 new_stream_url = data.get("stream_url")
                 new_stream_version = data.get("stream_version")
+                
+                print(f"\n🔄 STREAM UPDATE CHECK:")
+                print(f"   Current Stream ID: {getattr(self, 'current_stream_id', None)}")
+                print(f"   New Stream ID: {new_stream_id}")
+                print(f"   Stream ID Changed: {new_stream_id and new_stream_id != getattr(self, 'current_stream_id', None)}")
+                print(f"   Current Stream URL: {self.current_stream_url}")
+                print(f"   New Stream URL: {new_stream_url}")
+                print(f"   Stream URL Changed: {new_stream_url and new_stream_url != self.current_stream_url}")
                 
                 # Check if stream has changed
                 if new_stream_id and new_stream_id != getattr(self, 'current_stream_id', None):
