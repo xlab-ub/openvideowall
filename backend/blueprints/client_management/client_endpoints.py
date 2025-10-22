@@ -312,40 +312,8 @@ def register_client():
                 }
             }), 200
         
-        # Auto-assign clients based on hostname patterns
-        auto_assigned = False
-        if not existing_client or not existing_client.get("group_id"):
-            # Get available groups
-            try:
-                from ..docker_management import get_all_groups
-                groups = get_all_groups()
-                if groups:
-                    # Find the first available group (usually "Large_screens_3")
-                    target_group = groups[0]
-                    group_id = target_group.get("id")
-                    group_name = target_group.get("name")
-                    
-                    # Auto-assign based on hostname patterns
-                    if "UB_3S_1" in hostname or "client1" in hostname.lower() or "monitor1" in hostname.lower():
-                        screen_number = 0
-                        stream_assignment = f"screen0_{group_id}"
-                        assignment_status = "screen_assigned"
-                        auto_assigned = True
-                        logger.info(f"Auto-assigning {client_id} to {group_name} screen 0")
-                    elif "UB_3S_2" in hostname or "client2" in hostname.lower() or "monitor2" in hostname.lower():
-                        screen_number = 1
-                        stream_assignment = f"screen1_{group_id}"
-                        assignment_status = "screen_assigned"
-                        auto_assigned = True
-                        logger.info(f"Auto-assigning {client_id} to {group_name} screen 1")
-                    elif "UB_3S_3" in hostname or "client3" in hostname.lower() or "monitor3" in hostname.lower():
-                        screen_number = 2
-                        stream_assignment = f"screen2_{group_id}"
-                        assignment_status = "screen_assigned"
-                        auto_assigned = True
-                        logger.info(f"Auto-assigning {client_id} to {group_name} screen 2")
-            except Exception as e:
-                logger.warning(f"Could not auto-assign client: {e}")
+            # No auto-assignment - clients must be manually assigned
+            auto_assigned = False
         
         # Create or update client record
         client_data = {

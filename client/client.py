@@ -417,113 +417,93 @@ class UnifiedMultiScreenClient:
         
         try:
             x, y = self.monitor_positions[self.current_monitor]
-            print(f"   🎯 Checking window position on Monitor {self.current_monitor + 1} (x={x}, y={y})")
+            print(f"   🎯 Positioning window on Monitor {self.current_monitor + 1} (x={x}, y={y})")
             
-            # First check if window is already positioned correctly
-            pid_windows = self._find_player_window_ids()
-            if pid_windows:
-                for wid in pid_windows:
-                    result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
-                    if result.returncode == 0:
-                        for line in result.stdout.split('\n'):
-                            if wid in line:
-                                parts = line.split()
-                                if len(parts) >= 6:
-                                    current_x, current_y, w, h = int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5])
-                                    # Check if already positioned correctly and fullscreen
-                                    positioned_ok = abs(current_x - x) < 100 and abs(current_y - y) < 100
-                                    fullscreen_ok = w >= 1900 and h >= 1000
-                                    
-                                    if positioned_ok and fullscreen_ok:
-                                        print(f"   ✅ Window already correctly positioned and fullscreen")
-                                        return
-                                    elif positioned_ok and not fullscreen_ok:
-                                        print(f"   🔧 Window positioned correctly but not fullscreen, fixing...")
-                                        subprocess.run(['xdotool', 'windowactivate', '--sync', wid, 'key', 'f'], capture_output=True)
-                                        return
-                                    else:
-                                        print(f"   🔧 Window needs positioning: current=({current_x},{current_y}) target=({x},{y})")
-                                        break
+            # Wait for window to appear
+            time.sleep(3)
             
-            # If we get here, window needs positioning
-            for attempt in range(5):
-                time.sleep(2)
-                
-                print(f"   🔄 Attempt {attempt + 1}/5: Looking for windows...")
+            # Simple approach: find and move the window
+            for attempt in range(3):
+                print(f"   🔄 Attempt {attempt + 1}/3: Looking for windows...")
                 
                 # Get list of windows
                 result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
                 if result.returncode != 0:
                     print(f"   ❌ Could not list windows: {result.stderr}")
+                    time.sleep(2)
                     continue
                 
-                # Find THIS client's windows only (by display name)
+                # Find windows by PID first, then by name
                 windows_found = []
-                for line in result.stdout.split('\n'):
-                    if not line.strip():
-                        continue
-                    # Only match windows that contain this client's display name
-                    if "Multi-Screen Client" in line and "Window Manager" not in line and self.display_name in line:
-                        parts = line.split()
-                        if len(parts) >= 6:
-                            windows_found.append({
-                                'id': parts[0],
-                                'x': int(parts[2]),
-                                'y': int(parts[3]),
-                                'line': line
-                            })
+                
+                # Try to find by PID
+                pid_windows = self._find_player_window_ids()
+                if pid_windows:
+                    for wid in pid_windows:
+                        for line in result.stdout.split('\n'):
+                            if wid in line and "Multi-Screen Client" in line:
+                                parts = line.split()
+                                if len(parts) >= 6:
+                                    windows_found.append({
+                                        'id': wid,
+                                        'x': int(parts[2]),
+                                        'y': int(parts[3]),
+                                        'line': line
+                                    })
+                                    break
+                
+                # If no PID windows found, try by name
+                if not windows_found:
+                    for line in result.stdout.split('\n'):
+                        if "Multi-Screen Client" in line and "Window Manager" not in line and self.display_name in line:
+                            parts = line.split()
+                            if len(parts) >= 6:
+                                windows_found.append({
+                                    'id': parts[0],
+                                    'x': int(parts[2]),
+                                    'y': int(parts[3]),
+                                    'line': line
+                                })
                 
                 if not windows_found:
                     print(f"   No Multi-Screen Client windows found yet...")
+                    time.sleep(2)
                     continue
                 
-                # Try to move each window
-                for window in windows_found:
-                    print(f"   Found window: {window['line']}")
-                    print(f"   Current position: ({window['x']}, {window['y']})")
+                # Move the first window found
+                window = windows_found[0]
+                print(f"   Found window: {window['line']}")
+                print(f"   Current position: ({window['x']}, {window['y']})")
+                
+                # Move window to correct position
+                print(f"   Moving window {window['id']} to ({x}, {y})")
+                move_result = subprocess.run([
+                    'wmctrl', '-ir', window['id'], '-e', f'0,{x},{y},-1,-1'
+                ], capture_output=True, text=True)
+                
+                if move_result.returncode == 0:
+                    print(f"   ✅ Window moved successfully!")
+                    time.sleep(1)
                     
-                    # Check if already in correct position
-                    if abs(window['x'] - x) < 100 and abs(window['y'] - y) < 100:
-                        print(f"   ✅ Window already in correct position!")
-                        # Force fullscreen mode using safe method
-                        self._safe_force_fullscreen("already positioned")
-                        return
+                    # Force fullscreen
+                    print(f"   Making window fullscreen...")
+                    subprocess.run(['xdotool', 'windowactivate', '--sync', window['id']], capture_output=True)
+                    time.sleep(0.5)
+                    subprocess.run(['xdotool', 'key', 'f'], capture_output=True)
+                    time.sleep(0.5)
+                    subprocess.run(['wmctrl', '-ir', window['id'], '-b', 'add,fullscreen'], capture_output=True)
                     
-                    # Move window
-                    print(f"   Moving window {window['id']} to ({x}, {y})")
-                    move_result = subprocess.run([
-                        'wmctrl', '-ir', window['id'], '-e', f'0,{x},{y},-1,-1'
-                    ], capture_output=True, text=True)
-                    
-                    if move_result.returncode == 0:
-                        print(f"   ✅ Window moved successfully!")
-                        
-                        # Verify position
-                        time.sleep(1)
-                        verify_result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
-                        if verify_result.returncode == 0:
-                            for verify_line in verify_result.stdout.split('\n'):
-                                if window['id'] in verify_line:
-                                    verify_parts = verify_line.split()
-                                    if len(verify_parts) >= 6:
-                                        verify_x = int(verify_parts[2])
-                                        verify_y = int(verify_parts[3])
-                                        print(f"   New position: ({verify_x}, {verify_y})")
-                                        if abs(verify_x - x) < 100 and abs(verify_y - y) < 100:
-                                            print(f"   ✅ Successfully positioned on Monitor {self.current_monitor + 1}!")
-                                            # Force fullscreen mode using safe method
-                                            self._safe_force_fullscreen("successfully positioned")
-                                            return
-                                        else:
-                                            print(f"   ⚠️  Position not correct: expected ({x}, {y}), got ({verify_x}, {verify_y})")
-                        return
-                    else:
-                        print(f"   ❌ Failed to move window: {move_result.stderr}")
+                    print(f"   ✅ Window positioned and fullscreened!")
+                    return
+                else:
+                    print(f"   ❌ Failed to move window: {move_result.stderr}")
+                    time.sleep(2)
             
-            print(f"   ❌ Could not position window after 10 attempts")
+            print(f"   ❌ Could not position windows after 3 attempts")
             
         except Exception as e:
-            self.logger.error(f"Failed to position window: {e}")
+            print(f"   ❌ Error positioning window: {e}")
+            self.logger.error(f"Window positioning error: {e}")
     
     def _start_window_positioning_monitor(self):
         """Start a background thread to continuously monitor and reposition windows"""
