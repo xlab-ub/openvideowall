@@ -2025,6 +2025,12 @@ Note: Make sure the client window has focus for hotkeys to work.
     def _enforce_fullscreen_periodic(self):
         """Periodically enforce fullscreen mode only if needed."""
         try:
+            # Skip periodic enforcement for single monitor or shared display setups
+            if self._is_single_monitor_setup() or self._is_shared_display_setup():
+                setup_type = "shared display" if self._is_shared_display_setup() else "single monitor"
+                self.logger.debug(f"Periodic fullscreen enforcement disabled for {setup_type} setup")
+                return
+                
             if not self.player_process or self.player_process.poll() is not None:
                 return
                 
@@ -2064,11 +2070,11 @@ Note: Make sure the client window has focus for hotkeys to work.
                                         print(f"   ✅ Window is correctly positioned and fullscreen ({w}x{h})")
                                     break
                 
-                # Only schedule next check if we needed to fix something
-                if needs_fix:
+                # Only schedule next check if we needed to fix something (and not in single monitor mode)
+                if needs_fix and not self._is_single_monitor_setup() and not self._is_shared_display_setup():
                     threading.Timer(5.0, self._enforce_fullscreen_periodic).start()
-                else:
-                    # If everything is good, check again in 15 seconds
+                elif not self._is_single_monitor_setup() and not self._is_shared_display_setup():
+                    # If everything is good, check again in 15 seconds (only for multi-monitor)
                     threading.Timer(15.0, self._enforce_fullscreen_periodic).start()
         except Exception as e:
             self.logger.debug(f"Fullscreen enforcement failed: {e}")
@@ -2160,8 +2166,12 @@ Note: Make sure the client window has focus for hotkeys to work.
             # Start gentle fallback monitoring after initial positioning
             threading.Timer(5.0, self._start_fallback_monitor).start()
             
-            # Enable periodic fullscreen enforcement to ensure windows stay fullscreen
-            threading.Timer(3.0, self._enforce_fullscreen_periodic).start()
+            # Enable periodic fullscreen enforcement to ensure windows stay fullscreen (only for multi-monitor)
+            if not self._is_single_monitor_setup() and not self._is_shared_display_setup():
+                threading.Timer(3.0, self._enforce_fullscreen_periodic).start()
+            else:
+                setup_type = "shared display" if self._is_shared_display_setup() else "single monitor"
+                print(f"   🎯 {setup_type} setup - skipping periodic fullscreen enforcement")
             
             # Continuous window positioning monitor disabled to prevent repositioning
             # self._start_window_positioning_monitor()
