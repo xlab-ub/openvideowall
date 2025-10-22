@@ -1653,6 +1653,7 @@ Note: Make sure the client window has focus for hotkeys to work.
     def _check_for_stream_url_update(self) -> bool:
         """Check if the stream URL has been updated on the server"""
         try:
+            print(f"   📡 Checking server for stream updates...")
             # Try multiple endpoints to get current stream info
             endpoints_to_try = [
                 f"{self.server_url}/api/clients/wait_for_assignment",
@@ -1661,6 +1662,7 @@ Note: Make sure the client window has focus for hotkeys to work.
             
             for endpoint in endpoints_to_try:
                 try:
+                    print(f"   🔗 Trying endpoint: {endpoint}")
                     if "heartbeat" in endpoint:
                         # Use POST for heartbeat
                         response = requests.post(endpoint, 
@@ -1672,11 +1674,17 @@ Note: Make sure the client window has focus for hotkeys to work.
                                               params={"client_id": self.client_id}, 
                                               timeout=3)
                     
+                    print(f"   📊 Response status: {response.status_code}")
                     if response.status_code == 200:
                         data = response.json()
+                        print(f"   📋 Server response: {data}")
                         if data.get("success"):
                             new_stream_url = data.get("stream_url")
                             new_stream_version = data.get("stream_version")
+                            
+                            print(f"   🔍 Comparing streams:")
+                            print(f"     Current: {self.current_stream_url}")
+                            print(f"     Server:  {new_stream_url}")
                             
                             # Check if stream URL has changed
                             if new_stream_url and new_stream_url != self.current_stream_url:
@@ -1691,12 +1699,14 @@ Note: Make sure the client window has focus for hotkeys to work.
                                 self.current_stream_version = new_stream_version
                                 return True
                             else:
-                                print(f" Stream URL unchanged: {new_stream_url}")
+                                print(f"   ✅ Stream URL unchanged: {new_stream_url}")
                                 return False
                         else:
-                            print(f" Server response not successful: {data}")
+                            print(f"   ❌ Server response not successful: {data}")
+                    else:
+                        print(f"   ❌ HTTP error: {response.status_code}")
                 except Exception as e:
-                    print(f" Error with {endpoint}: {e}")
+                    print(f"   ❌ Error with {endpoint}: {e}")
                     continue
             
             return False
@@ -1798,7 +1808,13 @@ Note: Make sure the client window has focus for hotkeys to work.
                 self.create_window_manager()
             
             # Step 2: Main loop - wait for assignment and play streams
+            print(f" 🔄 Starting main client loop...")
+            loop_count = 0
             while self.running and not self._shutdown_event.is_set():
+                loop_count += 1
+                if loop_count % 10 == 0:  # Print every 10 iterations
+                    print(f" 🔄 Main loop iteration {loop_count} (running: {self.running}, shutdown: {self._shutdown_event.is_set()})")
+                
                 # Send periodic heartbeat to keep connection alive and check for stream updates
                 current_time = time.time()
                 if hasattr(self, 'last_heartbeat') and (current_time - self.last_heartbeat) > 10:
@@ -1815,6 +1831,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                 # Check for stream URL updates every 2 seconds (very frequent)
                 if hasattr(self, 'last_url_check') and (current_time - self.last_url_check) > 2:
                     print(f" 🔍 Checking for stream URL updates...")
+                    print(f"   Current stream URL: {self.current_stream_url[:50] if self.current_stream_url else 'None'}...")
                     if self._check_for_stream_url_update():
                         print(f" 🔄 Stream URL updated, restarting player...")
                         if self.player_process:
@@ -1831,9 +1848,12 @@ Note: Make sure the client window has focus for hotkeys to work.
                             print(f" 🎯 Forcing window positioning after restart...")
                             time.sleep(2)  # Wait for window to appear
                             self._position_window_on_monitor()
+                    else:
+                        print(f"   No stream URL changes detected")
                     self.last_url_check = current_time
                 elif not hasattr(self, 'last_url_check'):
                     self.last_url_check = current_time
+                    print(f" 🔍 Initial stream URL check timer set")
                 
                 # Additional check: if we have a stream URL but no player, force restart
                 if (self.current_stream_url and 
