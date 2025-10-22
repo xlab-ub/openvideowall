@@ -340,10 +340,8 @@ class UnifiedMultiScreenClient:
             pid_windows = self._find_player_window_ids()
             if pid_windows:
                 for wid in pid_windows:
-                    # Move to position
-                    subprocess.run(['wmctrl', '-ir', wid, '-e', f'0,{x},{y},-1,-1'])
-                    # Simple fullscreen enforcement
-                    subprocess.run(['wmctrl', '-ir', wid, '-b', 'add,fullscreen'], capture_output=True)
+                    # Use the improved fullscreen method
+                    self._force_fullscreen_for_window(wid, x, y)
                 print(f"Moved player window(s) to Monitor {monitor_index + 1} (x={x}, y={y}) and set fullscreen")
                 return
             
@@ -373,10 +371,8 @@ class UnifiedMultiScreenClient:
                 # Try to move video windows first
                 for line in video_windows:
                     window_id = line.split()[0]
-                    # Move to position
-                    subprocess.run(['wmctrl', '-ir', window_id, '-e', f'0,{x},{y},-1,-1'])
-                    # Simple fullscreen enforcement
-                    subprocess.run(['wmctrl', '-ir', window_id, '-b', 'add,fullscreen'], capture_output=True)
+                    # Use the improved fullscreen method
+                    self._force_fullscreen_for_window(window_id, x, y)
                     print(f"Moved video window to Monitor {monitor_index + 1} (x={x}, y={y}) and set fullscreen")
                     return
                 
@@ -384,9 +380,8 @@ class UnifiedMultiScreenClient:
                 if not video_windows and manager_windows:
                     for line in manager_windows:
                         window_id = line.split()[0]
-                        subprocess.run(['wmctrl', '-ir', window_id, '-e', f'0,{x},{y},-1,-1'])
-                        subprocess.run(['wmctrl', '-ir', window_id, '-b', 'add,fullscreen'])
-                        subprocess.run(['xdotool', 'windowactivate', '--sync', window_id, 'key', 'f'], capture_output=True)
+                        # Use the improved fullscreen method
+                        self._force_fullscreen_for_window(window_id, x, y)
                         print(f"Moved manager window to Monitor {monitor_index + 1} (x={x}, y={y}) and forced fullscreen")
                         return
             
@@ -486,30 +481,24 @@ class UnifiedMultiScreenClient:
                     print(f"   ✅ Window moved successfully!")
                     time.sleep(1)
                     
-                    # Force fullscreen with multiple attempts
+                    # Force fullscreen using the improved method
                     print(f"   Making window fullscreen...")
-                    for fullscreen_attempt in range(3):
-                        subprocess.run(['xdotool', 'windowactivate', '--sync', window['id']], capture_output=True)
-                        time.sleep(0.5)
-                        subprocess.run(['xdotool', 'key', 'f'], capture_output=True)
-                        time.sleep(0.5)
-                        subprocess.run(['wmctrl', '-ir', window['id'], '-b', 'add,fullscreen'], capture_output=True)
-                        time.sleep(0.5)
-                        
-                        # Check if window is now fullscreen
-                        check_result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
-                        if check_result.returncode == 0:
-                            for line in check_result.stdout.split('\n'):
-                                if window['id'] in line:
-                                    parts = line.split()
-                                    if len(parts) >= 6:
-                                        current_x, current_y = int(parts[2]), int(parts[3])
-                                        if current_x == x and current_y == y:
-                                            print(f"   ✅ Window positioned and fullscreened!")
-                                            return
-                        print(f"   Retry fullscreen attempt {fullscreen_attempt + 1}/3...")
+                    self._force_fullscreen_for_window(window['id'], x, y)
                     
-                    print(f"   ⚠️ Fullscreen may not be perfect, but window is positioned")
+                    # Verify positioning
+                    time.sleep(1)
+                    check_result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
+                    if check_result.returncode == 0:
+                        for line in check_result.stdout.split('\n'):
+                            if window['id'] in line:
+                                parts = line.split()
+                                if len(parts) >= 6:
+                                    current_x, current_y = int(parts[2]), int(parts[3])
+                                    if abs(current_x - x) < 100 and abs(current_y - y) < 100:
+                                        print(f"   ✅ Window positioned and fullscreened!")
+                                        return
+                    
+                    print(f"   ⚠️ Window positioned, fullscreen may need adjustment")
                     return
                 else:
                     print(f"   ❌ Failed to move window: {move_result.stderr}")
@@ -653,6 +642,36 @@ class UnifiedMultiScreenClient:
             self.logger.debug(f"Position check failed: {e}")
             return False
     
+    def _force_fullscreen_for_window(self, window_id, x, y):
+        """Force fullscreen for a specific window with proper positioning"""
+        try:
+            # Remove any existing window states first
+            subprocess.run(['wmctrl', '-ir', window_id, '-b', 'remove,maximized_vert,maximized_horz,fullscreen'], 
+                         check=False, capture_output=True, env={'DISPLAY': ':0'})
+            time.sleep(0.2)
+            
+            # Position window first
+            subprocess.run(['wmctrl', '-ir', window_id, '-e', f'0,{x},{y},-1,-1'], 
+                         check=False, capture_output=True, env={'DISPLAY': ':0'})
+            time.sleep(0.3)
+            
+            # Activate window and send fullscreen key
+            subprocess.run(['xdotool', 'windowactivate', '--sync', window_id], 
+                         check=False, capture_output=True, env={'DISPLAY': ':0'})
+            time.sleep(0.2)
+            subprocess.run(['xdotool', 'key', 'f'], 
+                         check=False, capture_output=True, env={'DISPLAY': ':0'})
+            time.sleep(0.5)
+            
+            # Use wmctrl as backup
+            subprocess.run(['wmctrl', '-ir', window_id, '-b', 'add,fullscreen'], 
+                         check=False, capture_output=True, env={'DISPLAY': ':0'})
+            
+            return True
+        except Exception as e:
+            self.logger.warning(f"Could not force fullscreen for window {window_id}: {e}")
+            return False
+
     def _safe_force_fullscreen(self, reason="positioning"):
         """Safely force fullscreen with cooldown to prevent interference"""
         current_time = time.time()
@@ -661,20 +680,40 @@ class UnifiedMultiScreenClient:
             return False
             
         try:
-            # Method 1: Try wmctrl fullscreen
-            result1 = subprocess.run(['wmctrl', '-r', f'Multi-Screen Client - {self.display_name}', '-b', 'add,fullscreen'], 
-                                   check=False, capture_output=True, env={'DISPLAY': ':0'})
+            # Find the window ID first
+            window_id = self._find_player_window_ids()
+            if not window_id:
+                self.logger.debug(f"No player window found for fullscreen - {reason}")
+                return False
             
-            # Method 2: Try xdotool to send ffplay's fullscreen toggle ('f')
-            result2 = subprocess.run(['xdotool', 'search', '--name', f'Multi-Screen Client - {self.display_name}', 'windowactivate', '--sync', 'key', 'f'], 
-                                   check=False, capture_output=True, env={'DISPLAY': ':0'})
+            # Use the first window ID found
+            wid = window_id[0] if isinstance(window_id, list) else window_id
             
-            # Method 3: Try to maximize and then fullscreen
-            subprocess.run(['wmctrl', '-r', f'Multi-Screen Client - {self.display_name}', '-b', 'add,maximized_vert,maximized_horz'], 
+            # Method 1: Remove any existing window states first
+            subprocess.run(['wmctrl', '-ir', wid, '-b', 'remove,maximized_vert,maximized_horz,fullscreen'], 
+                         check=False, capture_output=True, env={'DISPLAY': ':0'})
+            time.sleep(0.2)
+            
+            # Method 2: Position window first
+            x, y = self.monitor_positions[self.current_monitor]
+            subprocess.run(['wmctrl', '-ir', wid, '-e', f'0,{x},{y},-1,-1'], 
+                         check=False, capture_output=True, env={'DISPLAY': ':0'})
+            time.sleep(0.3)
+            
+            # Method 3: Activate window and send fullscreen key
+            subprocess.run(['xdotool', 'windowactivate', '--sync', wid], 
+                         check=False, capture_output=True, env={'DISPLAY': ':0'})
+            time.sleep(0.2)
+            subprocess.run(['xdotool', 'key', 'f'], 
+                         check=False, capture_output=True, env={'DISPLAY': ':0'})
+            time.sleep(0.5)
+            
+            # Method 4: Use wmctrl as backup
+            subprocess.run(['wmctrl', '-ir', wid, '-b', 'add,fullscreen'], 
                          check=False, capture_output=True, env={'DISPLAY': ':0'})
             
             self.last_fullscreen_attempt = current_time
-            self.logger.info(f"✅ Forced fullscreen mode (multiple methods) - {reason}")
+            self.logger.info(f"✅ Forced fullscreen mode - {reason}")
             return True
         except Exception as e:
             self.logger.warning(f"⚠️  Could not force fullscreen ({reason}): {e}")

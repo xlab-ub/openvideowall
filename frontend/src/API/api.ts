@@ -123,7 +123,7 @@ export const groupApi = {
         orientation: config.orientation || 'horizontal',
         enable_looping: config.enable_looping !== undefined ? config.enable_looping : true,
         loop_count: -1, // Infinite loop by default
-        srt_ip: config.srt_ip || '127.0.0.1',
+        srt_ip: config.srt_ip || '128.205.111.40',
         srt_port: config.srt_port || 10080,
         sei: '681d5c8f-80cd-4847-930a-99b9484b4a32+000000'
       };
@@ -164,7 +164,7 @@ export const groupApi = {
         output_height: config?.output_height || 1080,
         grid_rows: config?.grid_rows || 2,
         grid_cols: config?.grid_cols || 2,
-        srt_ip: config?.srt_ip || '127.0.0.1',
+        srt_ip: config?.srt_ip || '128.205.111.40',
         srt_port: config?.srt_port || 10080,
         // Optional: Send screen mapping separately if needed
         screen_mapping: videoFiles  // Keep original structure for reference
@@ -545,7 +545,7 @@ export const clientApi = {
         client_id: clientId,
         group_id: groupId, // Optional if client already in group
         stream_name: streamName, // Optional - will auto-assign if not provided
-        srt_ip: srtIp || '127.0.0.1'
+        srt_ip: srtIp || '128.205.111.40'
       }),
     });
 
@@ -570,7 +570,7 @@ export const clientApi = {
         client_id: clientId,
         group_id: groupId,
         screen_number: screenNumber,
-        srt_ip: srtIp || '127.0.0.1'
+        srt_ip: srtIp || '128.205.111.40'
       }),
     });
 
@@ -598,7 +598,7 @@ export const clientApi = {
         body: JSON.stringify({
           group_id: groupId,
           assignment_type: 'screens',
-          srt_ip: srtIp || '127.0.0.1'
+          srt_ip: srtIp || '128.205.111.40'
         }),
       });
 
@@ -634,7 +634,7 @@ export const clientApi = {
       body: JSON.stringify({
         group_id: groupId,
         assignment_type: 'streams',
-        srt_ip: srtIp || '127.0.0.1'
+        srt_ip: srtIp || '128.205.111.40'
       }),
     });
 

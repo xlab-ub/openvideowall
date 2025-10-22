@@ -394,8 +394,9 @@ def start_multi_video_srt():
                 "status": "already_active"
             }), 200
         
-        # Generate stream IDs
-        base_stream_id = str(uuid.uuid4())[:8]
+        # Generate stream IDs - use consistent ID based on group ID
+        # This ensures the same stream IDs are used when restarting
+        base_stream_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, group_id))[:8]
         stream_ids = generate_stream_ids(base_stream_id, group_name, screen_count)
         set_active_stream_ids(group_id, stream_ids)
         

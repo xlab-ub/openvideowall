@@ -23,7 +23,7 @@ const ActiveStreamsSection: React.FC<ActiveStreamsSectionProps> = ({
       <div className="space-y-1 max-h-16 overflow-y-auto">
         {group.available_streams.slice(0, 1).map((streamPath, index) => (
           <div key={index} className="font-mono bg-white p-1 rounded border text-xs break-all">
-            srt://127.0.0.1:{group.ports?.srt_port || 10080}?streamid=#!::r={streamPath},m=request
+            srt://128.205.111.40:{group.ports?.srt_port || 10080}?streamid=#!::r={streamPath},m=request
           </div>
         ))}
         {group.available_streams.length > 1 && (
