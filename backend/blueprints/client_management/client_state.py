@@ -28,9 +28,43 @@ class ClientState:
             self.initialized = True
             logger.info("Client management system initialized")
             
+            # Load existing clients from MongoDB
+            self._load_existing_clients()
+            
         except Exception as e:
             logger.error(f"Failed to initialize client management: {e}")
             raise
+
+    def _load_existing_clients(self):
+        """Load existing clients from MongoDB on startup"""
+        try:
+            from ...db.mongo import find_all  # type: ignore
+            
+            # Load all clients from MongoDB
+            clients_data = find_all("clients")
+            
+            if clients_data:
+                with self.clients_lock:
+                    for client in clients_data:
+                        client_id = client.get("client_id")
+                        if client_id:
+                            # Mark as inactive initially (will be updated when they reconnect)
+                            client["status"] = "inactive"
+                            self.clients[client_id] = client
+                            logger.info(f"Loaded existing client: {client_id}")
+                            logger.info(f"  - Group: {client.get('group_id')} ({client.get('group_name')})")
+                            logger.info(f"  - Assignment Status: {client.get('assignment_status')}")
+                            logger.info(f"  - Screen: {client.get('screen_number')}")
+                            logger.info(f"  - Stream: {client.get('stream_assignment')}")
+                            logger.info(f"  - Stream URL: {client.get('stream_url', 'None')[:50]}...")
+                
+                logger.info(f"Loaded {len(clients_data)} existing clients from MongoDB")
+            else:
+                logger.info("No existing clients found in MongoDB")
+                
+        except Exception as e:
+            logger.error(f"Failed to load existing clients from MongoDB: {e}")
+            # Don't raise - continue without existing clients
     
     def get_client(self, client_id: str) -> Optional[Dict[str, Any]]:
         """Get client by ID"""

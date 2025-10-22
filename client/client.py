@@ -1589,10 +1589,11 @@ Note: Make sure the client window has focus for hotkeys to work.
                     # Window manager closed
                     break
             
-            # Check for stream changes
+            # Check for stream changes via heartbeat mechanism
             if current_time - last_stream_check >= stream_check_interval:
-                if self._check_for_stream_change():
-                    print(f" Stream change detected, will restart with optimal player...")
+                print(f" 🔍 Checking for stream changes...")
+                if self._check_for_stream_url_update():
+                    print(f" 🔄 Stream change detected, will restart with optimal player...")
                     self.stop_stream()
                     return 'stream_changed'
                 last_stream_check = current_time
