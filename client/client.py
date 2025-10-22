@@ -1510,30 +1510,50 @@ Note: Make sure the client window has focus for hotkeys to work.
     def _check_for_stream_url_update(self) -> bool:
         """Check if the stream URL has been updated on the server"""
         try:
-            # Get current assignment from server
-            response = requests.get(f"{self.server_url}/api/clients/wait_for_assignment", 
-                                 params={"client_id": self.client_id}, timeout=10)
+            # Try multiple endpoints to get current stream info
+            endpoints_to_try = [
+                f"{self.server_url}/api/clients/wait_for_assignment",
+                f"{self.server_url}/api/clients/heartbeat"
+            ]
             
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success"):
-                    new_stream_url = data.get("stream_url")
-                    new_stream_version = data.get("stream_version")
-                    
-                    # Check if stream URL has changed
-                    if new_stream_url and new_stream_url != self.current_stream_url:
-                        print(f" Stream URL update detected:")
-                        print(f"   Old URL: {self.current_stream_url}")
-                        print(f"   New URL: {new_stream_url}")
-                        print(f"   Old version: {self.current_stream_version}")
-                        print(f"   New version: {new_stream_version}")
-                        
-                        # Update our cached values
-                        self.current_stream_url = new_stream_url
-                        self.current_stream_version = new_stream_version
-                        return True
+            for endpoint in endpoints_to_try:
+                try:
+                    if "heartbeat" in endpoint:
+                        # Use POST for heartbeat
+                        response = requests.post(endpoint, 
+                                               json={"client_id": self.client_id}, 
+                                               timeout=5)
                     else:
-                        print(f" Stream URL unchanged: {new_stream_url}")
+                        # Use GET for wait_for_assignment
+                        response = requests.get(endpoint, 
+                                              params={"client_id": self.client_id}, 
+                                              timeout=5)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get("success"):
+                            new_stream_url = data.get("stream_url")
+                            new_stream_version = data.get("stream_version")
+                            
+                            # Check if stream URL has changed
+                            if new_stream_url and new_stream_url != self.current_stream_url:
+                                print(f" 🔄 Stream URL update detected:")
+                                print(f"   Old URL: {self.current_stream_url}")
+                                print(f"   New URL: {new_stream_url}")
+                                print(f"   Old version: {self.current_stream_version}")
+                                print(f"   New version: {new_stream_version}")
+                                
+                                # Update our cached values
+                                self.current_stream_url = new_stream_url
+                                self.current_stream_version = new_stream_version
+                                return True
+                            else:
+                                print(f" Stream URL unchanged: {new_stream_url}")
+                                return False
+                except Exception as e:
+                    print(f" Error with {endpoint}: {e}")
+                    continue
+            
             return False
         except Exception as e:
             print(f" Error checking for stream URL update: {e}")
@@ -1644,18 +1664,42 @@ Note: Make sure the client window has focus for hotkeys to work.
                 
                 # Check for stream URL updates every 5 seconds
                 if hasattr(self, 'last_url_check') and (current_time - self.last_url_check) > 5:
-                    print(f" Checking for stream URL updates...")
+                    print(f" 🔍 Checking for stream URL updates...")
                     if self._check_for_stream_url_update():
-                        print(f" Stream URL updated, restarting player...")
+                        print(f" 🔄 Stream URL updated, restarting player...")
                         if self.player_process:
+                            print(f" Stopping current player process...")
                             self.player_process.terminate()
                             self.player_process = None
                         # Don't clear current_stream_url here - it was already updated in _check_for_stream_url_update
                         self.current_stream_version = None
                         self.current_player_type = None
+                        print(f" ✅ Player will restart with new URL on next iteration")
                     self.last_url_check = current_time
                 elif not hasattr(self, 'last_url_check'):
                     self.last_url_check = current_time
+                
+                # Additional check: if we have a stream URL but no player, force restart
+                if (self.current_stream_url and 
+                    (not self.player_process or self.player_process.poll() is not None) and
+                    hasattr(self, 'last_force_check') and (current_time - self.last_force_check) > 10):
+                    print(f" 🔄 Force checking stream - URL exists but no player running")
+                    if self._check_for_stream_url_update():
+                        print(f" Stream URL updated during force check, will restart player")
+                    self.last_force_check = current_time
+                elif not hasattr(self, 'last_force_check'):
+                    self.last_force_check = current_time
+                
+                # Periodic stream validation - check if current stream is still valid
+                if (self.current_stream_url and 
+                    hasattr(self, 'last_stream_validation') and 
+                    (current_time - self.last_stream_validation) > 30):
+                    print(f" 🔍 Validating current stream...")
+                    if self._check_for_stream_url_update():
+                        print(f" Stream validation detected changes, will restart player")
+                    self.last_stream_validation = current_time
+                elif not hasattr(self, 'last_stream_validation'):
+                    self.last_stream_validation = current_time
                 
                 # Only wait for assignment if we don't have a current stream
                 if not self.current_stream_url:
@@ -1740,7 +1784,22 @@ Note: Make sure the client window has focus for hotkeys to work.
                             if self._shutdown_event.wait(timeout=10):
                                 break
                     else:
-                        # Player is running, just wait a bit before next iteration
+                        # Player is running, check if it's still healthy
+                        if (hasattr(self, 'last_health_check') and 
+                            (current_time - self.last_health_check) > 15):
+                            print(f" 🏥 Checking player health...")
+                            if self.player_process and self.player_process.poll() is not None:
+                                print(f" ⚠️ Player process has stopped unexpectedly")
+                                # Clear stream URL to force reassignment
+                                self.current_stream_url = None
+                                self.current_stream_version = None
+                                self.current_player_type = None
+                                self.player_process = None
+                            self.last_health_check = current_time
+                        elif not hasattr(self, 'last_health_check'):
+                            self.last_health_check = current_time
+                        
+                        # Just wait a bit before next iteration
                         if self._shutdown_event.wait(timeout=1):
                             break
                         
