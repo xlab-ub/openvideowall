@@ -32,6 +32,7 @@ interface GroupCardExpandedContentProps {
   hasCompleteAssignments: boolean;
   hasAnyAssignments: boolean;
   saveVideoChanges: () => Promise<void>;
+  isSaving: boolean;
   onDelete: (groupId: string, groupName: string) => void;
   onAssignClient?: (clientId: string, groupId: string) => void;
   
@@ -64,6 +65,7 @@ const GroupCardExpandedContent: React.FC<GroupCardExpandedContentProps> = ({
   hasCompleteAssignments,
   hasAnyAssignments,
   saveVideoChanges,
+  isSaving,
   onDelete,
   onAssignClient,
   // 🆕 Screen assignment props
@@ -104,6 +106,7 @@ const GroupCardExpandedContent: React.FC<GroupCardExpandedContentProps> = ({
         hasAnyAssignments={hasAnyAssignments}
         hasCompleteAssignments={hasCompleteAssignments}
         saveVideoChanges={saveVideoChanges}
+        isSaving={isSaving}
       />
 
       {/* Assigned Clients */}

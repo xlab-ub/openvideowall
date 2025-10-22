@@ -1662,14 +1662,20 @@ Note: Make sure the client window has focus for hotkeys to work.
                 elif not hasattr(self, 'last_heartbeat'):
                     self.last_heartbeat = current_time
                 
-                # Check for stream URL updates every 5 seconds
-                if hasattr(self, 'last_url_check') and (current_time - self.last_url_check) > 5:
+                # Check for stream URL updates every 3 seconds (more frequent)
+                if hasattr(self, 'last_url_check') and (current_time - self.last_url_check) > 3:
                     print(f" 🔍 Checking for stream URL updates...")
                     if self._check_for_stream_url_update():
                         print(f" 🔄 Stream URL updated, restarting player...")
                         if self.player_process:
                             print(f" Stopping current player process...")
                             self.player_process.terminate()
+                            # Wait for process to actually stop
+                            try:
+                                self.player_process.wait(timeout=2)
+                            except subprocess.TimeoutExpired:
+                                print(f" Force killing player process...")
+                                self.player_process.kill()
                             self.player_process = None
                         # Don't clear current_stream_url here - it was already updated in _check_for_stream_url_update
                         self.current_stream_version = None

@@ -129,7 +129,8 @@ const GroupCard: React.FC<GroupCardProps> = ({
     resetVideoAssignments,
     hasCompleteAssignments,
     hasAnyAssignments,
-    saveVideoChanges
+    saveVideoChanges,
+    isSaving
   } = useVideoAssignments(group.id, group.screen_count, handleVideoChangeRestart, false); // Disable auto-restart
 
   const {
@@ -195,6 +196,7 @@ const GroupCard: React.FC<GroupCardProps> = ({
               hasCompleteAssignments={hasCompleteAssignments}
               hasAnyAssignments={hasAnyAssignments}
               saveVideoChanges={saveVideoChanges}
+              isSaving={isSaving}
               onDelete={onDelete}
               onAssignClient={onAssignClient}
 

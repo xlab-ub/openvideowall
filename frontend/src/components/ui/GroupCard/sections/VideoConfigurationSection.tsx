@@ -22,6 +22,7 @@ interface VideoConfigurationSectionProps {
   hasAnyAssignments: boolean;
   hasCompleteAssignments: boolean;
   saveVideoChanges: () => Promise<void>;
+  isSaving: boolean;
 }
 
 const VideoConfigurationSection: React.FC<VideoConfigurationSectionProps> = ({
@@ -36,7 +37,8 @@ const VideoConfigurationSection: React.FC<VideoConfigurationSectionProps> = ({
   resetVideoAssignments,
   hasAnyAssignments,
   hasCompleteAssignments,
-  saveVideoChanges
+  saveVideoChanges,
+  isSaving
 }) => {
   if (group.streaming_mode === 'multi_video') {
     return (
@@ -133,9 +135,10 @@ const VideoConfigurationSection: React.FC<VideoConfigurationSectionProps> = ({
                 <Button
                   onClick={saveVideoChanges}
                   size="sm"
-                  className="text-xs bg-blue-600 hover:bg-blue-700"
+                  disabled={isSaving}
+                  className="text-xs bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
                 >
-                  💾 Save & Apply Changes
+                  {isSaving ? "⏳ Saving..." : "💾 Save & Apply Changes"}
                 </Button>
                 <Button
                   variant="outline"
@@ -243,9 +246,10 @@ const VideoConfigurationSection: React.FC<VideoConfigurationSectionProps> = ({
               <Button
                 onClick={saveVideoChanges}
                 size="sm"
-                className="text-xs bg-blue-600 hover:bg-blue-700"
+                disabled={isSaving}
+                className="text-xs bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
               >
-                💾 Save & Apply Changes
+                {isSaving ? "⏳ Saving..." : "💾 Save & Apply Changes"}
               </Button>
               <Button
                 variant="outline"

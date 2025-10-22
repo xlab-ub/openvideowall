@@ -68,6 +68,7 @@ export const useVideoAssignments = (groupId: string, screenCount: number, onVide
   const [videoAssignments, setVideoAssignments] = useState<VideoAssignment[]>([]);
   const [showVideoConfig, setShowVideoConfig] = useState(false);
   const [selectedVideoFile, setSelectedVideoFile] = useState<string>('');
+  const [isSaving, setIsSaving] = useState(false);
 
   // Load saved video assignments and selected video when group changes or component mounts
   useEffect(() => {
@@ -131,8 +132,13 @@ export const useVideoAssignments = (groupId: string, screenCount: number, onVide
   // Manual save function that always triggers restart
   const saveVideoChanges = async () => {
     if (onVideoChange) {
-      console.log(` Manual save triggered for group ${groupId}`);
-      await restartWithCurrentState();
+      setIsSaving(true);
+      try {
+        console.log(` Manual save triggered for group ${groupId}`);
+        await restartWithCurrentState();
+      } finally {
+        setIsSaving(false);
+      }
     }
   };
 
@@ -151,36 +157,52 @@ export const useVideoAssignments = (groupId: string, screenCount: number, onVide
       console.log(` Current streaming stopped, restarting...`);
       
       // Wait a moment for cleanup
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Increased wait time
       
-      // Restart based on current assignments
-      const validAssignments = videoAssignments.filter(assignment => assignment.file);
+      // Get group info to determine streaming mode
+      const groupsResponse = await api.group.getGroups();
+      const currentGroup = groupsResponse.groups.find((g: any) => g.id === groupId);
       
-      if (validAssignments.length === 0) {
-        console.log(` No video assignments, cannot restart`);
+      if (!currentGroup) {
+        console.error(` Group ${groupId} not found`);
         return;
       }
       
-      if (validAssignments.length === 1 && selectedVideoFile) {
-        // Single video split mode
+      console.log(` Group streaming mode: ${currentGroup.streaming_mode}`);
+      
+      // Restart based on group's streaming mode
+      if (currentGroup.streaming_mode === 'single_video_split') {
+        if (!selectedVideoFile) {
+          console.log(` No video file selected for split mode`);
+          return;
+        }
+        console.log(` Starting single video split with: ${selectedVideoFile}`);
         await api.group.startSingleVideoSplit(groupId, {
           video_file: selectedVideoFile,
-          screen_count: videoAssignments.length,
-          orientation: 'horizontal', // Default, could be made configurable
+          screen_count: currentGroup.screen_count,
+          orientation: currentGroup.orientation,
           enable_looping: true
         });
       } else {
         // Multi-video mode
+        const validAssignments = videoAssignments.filter(assignment => assignment.file);
+        if (validAssignments.length === 0) {
+          console.log(` No video assignments for multi-video mode`);
+          return;
+        }
+        console.log(` Starting multi-video with ${validAssignments.length} assignments`);
         await api.group.startMultiVideoGroup(groupId, validAssignments, {
-          screen_count: videoAssignments.length,
-          orientation: 'horizontal' // Default, could be made configurable
+          screen_count: currentGroup.screen_count,
+          orientation: currentGroup.orientation
         });
       }
       
-      console.log(` Streaming restarted successfully for group ${groupId}`);
+      console.log(` ✅ Streaming restarted successfully for group ${groupId}`);
       
     } catch (error) {
-      console.error(` Error restarting streaming for group ${groupId}:`, error);
+      console.error(` ❌ Error restarting streaming for group ${groupId}:`, error);
+      // Show error to user
+      alert(`Failed to restart streaming: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -200,6 +222,7 @@ export const useVideoAssignments = (groupId: string, screenCount: number, onVide
     resetVideoAssignments,
     hasCompleteAssignments,
     hasAnyAssignments,
-    saveVideoChanges // Manual save function
+    saveVideoChanges, // Manual save function
+    isSaving // Loading state for save button
   };
 };
