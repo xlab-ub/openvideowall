@@ -118,6 +118,17 @@ const VideoConfigurationSection: React.FC<VideoConfigurationSectionProps> = ({
             </div>
 
             {hasAnyAssignments && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded p-2 mb-2">
+                <div className="text-xs text-yellow-800 font-medium">
+                  ⚠️ Video Changes Restart All Screens
+                </div>
+                <div className="text-xs text-yellow-600 mt-1">
+                  Changing any video will restart streaming for all {group.screen_count} screens, causing a brief interruption.
+                </div>
+              </div>
+            )}
+
+            {hasAnyAssignments && (
               <div className="bg-green-50 border border-green-200 rounded p-2">
                 <div className="text-xs text-green-800 font-medium">
                   {videoAssignments.filter(a => a.file).length} of {group.screen_count} screens configured
@@ -138,7 +149,7 @@ const VideoConfigurationSection: React.FC<VideoConfigurationSectionProps> = ({
                   disabled={isSaving}
                   className="text-xs bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {isSaving ? "⏳ Saving..." : "💾 Save & Apply Changes"}
+                  {isSaving ? "⏳ Restarting All Screens..." : "💾 Save & Apply Changes"}
                 </Button>
                 <Button
                   variant="outline"
@@ -249,7 +260,7 @@ const VideoConfigurationSection: React.FC<VideoConfigurationSectionProps> = ({
                 disabled={isSaving}
                 className="text-xs bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
               >
-                {isSaving ? "⏳ Saving..." : "💾 Save & Apply Changes"}
+                {isSaving ? "⏳ Restarting Stream..." : "💾 Save & Apply Changes"}
               </Button>
               <Button
                 variant="outline"

@@ -30,31 +30,64 @@ def extract_ffmpeg_stream_ids(group_id: str, group_name: str, screen_count: int)
         
         logger.info(f"Extracting FFmpeg stream IDs for group {group_name}")
         
-        # Find FFmpeg process for this group
-        result = subprocess.run(
-            ["ps", "aux"], 
-            capture_output=True, 
-            text=True, 
-            timeout=10
-        )
-        
-        if result.returncode != 0:
-            logger.error(f"Failed to get process list: {result.stderr}")
-            return {}
-        
-        # Look for FFmpeg processes with our group name
+        # Find FFmpeg process for this group - try multiple methods
         ffmpeg_lines = []
-        for line in result.stdout.split('\n'):
-            if 'ffmpeg' in line and group_name in line and 'srt://' in line:
-                ffmpeg_lines.append(line)
+        
+        # Method 1: ps aux
+        try:
+            result = subprocess.run(
+                ["ps", "aux"], 
+                capture_output=True, 
+                text=True, 
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                for line in result.stdout.split('\n'):
+                    if 'ffmpeg' in line and group_name in line and 'srt://' in line:
+                        ffmpeg_lines.append(line)
+                        logger.info(f"Found FFmpeg process via ps aux: {line[:100]}...")
+        except Exception as e:
+            logger.warning(f"ps aux failed: {e}")
+        
+        # Method 2: pgrep + ps if ps aux didn't work
+        if not ffmpeg_lines:
+            try:
+                # Find FFmpeg processes by name
+                pgrep_result = subprocess.run(
+                    ["pgrep", "-f", "ffmpeg"], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=5
+                )
+                
+                if pgrep_result.returncode == 0:
+                    pids = pgrep_result.stdout.strip().split('\n')
+                    for pid in pids:
+                        if pid.strip():
+                            ps_result = subprocess.run(
+                                ["ps", "-p", pid.strip(), "-o", "args="], 
+                                capture_output=True, 
+                                text=True, 
+                                timeout=5
+                            )
+                            if ps_result.returncode == 0 and group_name in ps_result.stdout:
+                                ffmpeg_lines.append(ps_result.stdout.strip())
+                                logger.info(f"Found FFmpeg process via pgrep: {ps_result.stdout[:100]}...")
+            except Exception as e:
+                logger.warning(f"pgrep method failed: {e}")
         
         if not ffmpeg_lines:
             logger.warning(f"No FFmpeg process found for group {group_name}")
+            logger.warning(f"This could mean:")
+            logger.warning(f"  1. FFmpeg hasn't started yet")
+            logger.warning(f"  2. FFmpeg process name doesn't contain '{group_name}'")
+            logger.warning(f"  3. FFmpeg process crashed")
             return {}
         
         # Extract stream IDs from the first FFmpeg command
         ffmpeg_cmd = ffmpeg_lines[0]
-        logger.info(f"Found FFmpeg command: {ffmpeg_cmd}")
+        logger.info(f"Analyzing FFmpeg command: {ffmpeg_cmd[:200]}...")
         
         # Pattern to match streamid=#!::r=live/group/stream_id
         stream_pattern = r'streamid=#!::r=live/[^/]+/([a-f0-9_]+)'
@@ -62,6 +95,7 @@ def extract_ffmpeg_stream_ids(group_id: str, group_name: str, screen_count: int)
         
         if not stream_matches:
             logger.warning(f"No stream IDs found in FFmpeg command")
+            logger.warning(f"Command: {ffmpeg_cmd}")
             return {}
         
         # Parse the stream IDs

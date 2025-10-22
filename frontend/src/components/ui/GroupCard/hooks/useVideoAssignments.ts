@@ -129,12 +129,30 @@ export const useVideoAssignments = (groupId: string, screenCount: number, onVide
     }
   };
 
-  // Manual save function that always triggers restart
+  // Manual save function that shows warning for multi-screen changes
   const saveVideoChanges = async () => {
     if (onVideoChange) {
       setIsSaving(true);
       try {
         console.log(` Manual save triggered for group ${groupId}`);
+        
+        // Check if this is a multi-screen setup and warn user
+        if (screenCount > 1) {
+          const hasChanges = videoAssignments.some(assignment => assignment.file);
+          if (hasChanges) {
+            const confirmed = window.confirm(
+              `⚠️ WARNING: Changing videos will restart ALL ${screenCount} screens.\n\n` +
+              `This will cause a brief interruption to all streams.\n\n` +
+              `Do you want to continue?`
+            );
+            
+            if (!confirmed) {
+              console.log(` User cancelled video changes`);
+              return;
+            }
+          }
+        }
+        
         await restartWithCurrentState();
         
         // Keep popup open for a moment to show success
@@ -163,8 +181,8 @@ export const useVideoAssignments = (groupId: string, screenCount: number, onVide
       await api.group.stopGroup(groupId);
       console.log(` Current streaming stopped, restarting...`);
       
-      // Wait a moment for cleanup
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Increased wait time
+      // Wait a moment for cleanup (reduced from 2000ms to 1500ms)
+      await new Promise(resolve => setTimeout(resolve, 1500));
       
       // Get group info to determine streaming mode
       const groupsResponse = await api.group.getGroups();
