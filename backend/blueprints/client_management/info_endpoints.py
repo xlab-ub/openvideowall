@@ -92,6 +92,7 @@ def list_clients():
                 "group_id": group_id,
                 "group_name": group_info.get("name") if group_info else None,
                 "group_docker_running": group_info.get("docker_running") if group_info else None,
+                "stream_id": client_data.get("stream_id"),
                 "stream_assignment": client_data.get("stream_assignment"),
                 "stream_url": client_data.get("stream_url"),
                 "screen_number": client_data.get("screen_number"),
