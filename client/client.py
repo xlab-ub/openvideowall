@@ -1113,13 +1113,16 @@ Note: Make sure the client window has focus for hotkeys to work.
                     self.current_stream_url = new_stream_url
                     self.current_stream_version = new_stream_version
                     
-                    # Restart ffplay if it's currently running
+                    # Stop current ffplay and prepare for new stream
                     if self.player_process and self.player_process.poll() is None:
-                        print(f" 🔄 Restarting ffplay with new stream...")
-                        self.player_process.terminate()
-                        self.player_process = None
-                        self.current_player_type = None
+                        print(f" 🛑 Stopping current ffplay for stream change...")
+                        self._stop_player_process()
                     
+                    # Also clean up any other old ffplay processes
+                    print(f" 🧹 Cleaning up any other old ffplay processes...")
+                    self._kill_old_ffplay_processes()
+                    
+                    print(f" ⏳ New stream detected, will start after verification...")
                     return True
                 elif new_stream_url and new_stream_url != self.current_stream_url:
                     print(f" 🔄 Stream URL updated during heartbeat:")
@@ -1128,13 +1131,16 @@ Note: Make sure the client window has focus for hotkeys to work.
                     self.current_stream_url = new_stream_url
                     self.current_stream_version = new_stream_version
                     
-                    # Restart ffplay if it's currently running
+                    # Stop current ffplay and prepare for new URL
                     if self.player_process and self.player_process.poll() is None:
-                        print(f" 🔄 Restarting ffplay with new URL...")
-                        self.player_process.terminate()
-                        self.player_process = None
-                        self.current_player_type = None
+                        print(f" 🛑 Stopping current ffplay for URL change...")
+                        self._stop_player_process()
                     
+                    # Also clean up any other old ffplay processes
+                    print(f" 🧹 Cleaning up any other old ffplay processes...")
+                    self._kill_old_ffplay_processes()
+                    
+                    print(f" ⏳ New URL detected, will start after verification...")
                     return True
                 else:
                     # Stream unchanged, just update our info
@@ -1494,6 +1500,65 @@ Note: Make sure the client window has focus for hotkeys to work.
         except Exception as e:
             self.logger.error(f"ffplay error: {e}")
             return False
+
+    def _stop_player_process(self) -> bool:
+        """Stop the current player process completely"""
+        if not self.player_process:
+            return True
+            
+        try:
+            print(f" 🛑 Stopping player process (PID: {self.player_process.pid})...")
+            
+            # First try graceful termination
+            self.player_process.terminate()
+            
+            # Wait for process to stop
+            try:
+                self.player_process.wait(timeout=5)
+                print(f" ✅ Player process stopped gracefully")
+                return True
+            except subprocess.TimeoutExpired:
+                print(f" ⚠️ Graceful stop timeout, force killing...")
+                
+                # Force kill
+                self.player_process.kill()
+                try:
+                    self.player_process.wait(timeout=2)
+                    print(f" ✅ Player process force killed")
+                    return True
+                except subprocess.TimeoutExpired:
+                    print(f" ❌ Player process still running after force kill")
+                    return False
+                    
+        except Exception as e:
+            print(f" ❌ Error stopping player process: {e}")
+            return False
+        finally:
+            self.player_process = None
+            self.current_player_type = None
+
+    def _kill_old_ffplay_processes(self):
+        """Kill any old ffplay processes that might be stuck with old streams"""
+        try:
+            import subprocess
+            result = subprocess.run(['ps', 'aux'], capture_output=True, text=True)
+            ffplay_lines = [line for line in result.stdout.split('\n') if 'ffplay' in line and 'Multi-Screen Client' in line]
+            
+            for line in ffplay_lines:
+                parts = line.split()
+                if len(parts) >= 2:
+                    pid = parts[1]
+                    try:
+                        print(f" 🗑️ Killing old ffplay process (PID: {pid})")
+                        subprocess.run(['kill', '-9', pid], check=True)
+                        print(f" ✅ Old ffplay process killed")
+                    except subprocess.CalledProcessError:
+                        print(f" ⚠️ Could not kill old ffplay process {pid}")
+                    except Exception as e:
+                        print(f" ⚠️ Error killing old ffplay process {pid}: {e}")
+                        
+        except Exception as e:
+            print(f" ⚠️ Error checking for old ffplay processes: {e}")
     
     def monitor_player(self) -> str:
         """Monitor the player process and check for stream changes"""
@@ -1718,6 +1783,10 @@ Note: Make sure the client window has focus for hotkeys to work.
             print(f"   C++ Player: {'Available' if self.player_executable else 'Not found'}")
             print(f"{'='*80}")
             
+            # Step 0: Clean up any old ffplay processes
+            print(f" 🧹 Cleaning up any old ffplay processes...")
+            self._kill_old_ffplay_processes()
+            
             # Step 1: Register with server
             if not self.register():
                 print(f" Registration failed - exiting")
@@ -1749,18 +1818,7 @@ Note: Make sure the client window has focus for hotkeys to work.
                         print(f" 🔄 Stream URL updated, restarting player...")
                         if self.player_process:
                             print(f" Stopping current player process...")
-                            self.player_process.terminate()
-                            # Wait for process to actually stop
-                            try:
-                                self.player_process.wait(timeout=3)
-                            except subprocess.TimeoutExpired:
-                                print(f" Force killing player process...")
-                                self.player_process.kill()
-                                try:
-                                    self.player_process.wait(timeout=1)
-                                except subprocess.TimeoutExpired:
-                                    print(f" Process still running, continuing...")
-                            self.player_process = None
+                            self._stop_player_process()
                         # Don't clear current_stream_url here - it was already updated in _check_for_stream_url_update
                         self.current_stream_version = None
                         self.current_player_type = None
