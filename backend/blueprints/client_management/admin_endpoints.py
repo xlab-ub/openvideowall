@@ -231,6 +231,13 @@ def assign_client_to_stream():
         else:
             state.clients[client_id] = client
         
+        # Save persistent assignment to database (stream assignment doesn't have screen number)
+        from ..db.mongo import save_client_assignment
+        hostname = client.get("hostname")
+        if hostname:
+            save_client_assignment(client_id, hostname, group_id, None, group_name)
+            logger.info(f"Saved persistent assignment for {hostname} to group {group_name} (stream assignment)")
+        
         logger.info(f"Assigned client {client_id} to stream {stream_name} in group {group_id}")
         logger.info(f"   Stream URL: {stream_url}")
         
@@ -362,6 +369,18 @@ def assign_client_to_screen():
             state.add_client(client_id, client)
         else:
             state.clients[client_id] = client
+        
+        # Save persistent assignment to database with monitor position
+        from ..db.mongo import save_client_assignment
+        hostname = client.get("hostname")
+        if hostname:
+            # Calculate monitor position based on screen number
+            # Default monitor positions: (0,0), (3840,0), (7680,0), (0,2160)
+            monitor_positions = [(0, 0), (3840, 0), (7680, 0), (0, 2160)]
+            monitor_x, monitor_y = monitor_positions[screen_number] if screen_number < len(monitor_positions) else (0, 0)
+            
+            save_client_assignment(client_id, hostname, group_id, screen_number, group_name, monitor_x, monitor_y)
+            logger.info(f"Saved persistent assignment for {hostname} to group {group_name} screen {screen_number} at ({monitor_x}, {monitor_y})")
         
         logger.info(f"Assigned client {client_id} to screen {screen_number} in group {group_name}")
         logger.info(f"   Client will receive stream URL when streaming starts")
@@ -517,6 +536,13 @@ def unassign_client():
                     "success": False,
                     "error": "Invalid state object - missing clients attribute"
                 }), 500
+        
+        # Remove persistent assignment if unassigning all or if no assignments remain
+        from ..db.mongo import remove_client_assignment
+        hostname = client.get("hostname")
+        if hostname and (unassign_type == "all" or client.get("assignment_status") == "waiting_for_assignment"):
+            remove_client_assignment(hostname)
+            logger.info(f"Removed persistent assignment for {hostname}")
         
         logger.info(f"Successfully unassigned client {client_id} ({unassign_type})")
         logger.info(f"New client state: {client}")

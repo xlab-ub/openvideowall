@@ -56,6 +56,10 @@ class UnifiedMultiScreenClient:
             (0, 2160),   # Monitor 4 (bottom-left)
         ]
         
+        # Stored monitor position from server assignment
+        self.assigned_monitor_x = None
+        self.assigned_monitor_y = None
+        
         # Fallback monitoring
         self.last_correct_position_time = time.time()
         self.position_check_interval = 60  # Check every 60 seconds
@@ -441,21 +445,26 @@ class UnifiedMultiScreenClient:
             return
         
         try:
-            x, y = self.monitor_positions[self.current_monitor]
-            print(f"   🎯 Positioning window on Monitor {self.current_monitor + 1} (x={x}, y={y})")
+            # Use stored monitor position if available, otherwise use default
+            if self.assigned_monitor_x is not None and self.assigned_monitor_y is not None:
+                x, y = self.assigned_monitor_x, self.assigned_monitor_y
+                print(f"   🎯 Positioning window on assigned monitor (x={x}, y={y})")
+            else:
+                x, y = self.monitor_positions[self.current_monitor]
+                print(f"   🎯 Positioning window on Monitor {self.current_monitor + 1} (x={x}, y={y})")
             
-            # Wait for window to appear
-            time.sleep(3)
+            # Wait for window to appear (reduced from 3 to 1 second)
+            time.sleep(1)
             
-            # Simple approach: find and move the window
-            for attempt in range(3):
-                print(f"   🔄 Attempt {attempt + 1}/3: Looking for windows...")
+            # Aggressive approach: find and move the window quickly
+            for attempt in range(5):  # More attempts but faster
+                print(f"   🔄 Attempt {attempt + 1}/5: Looking for windows...")
                 
                 # Get list of windows
                 result = subprocess.run(['wmctrl', '-lG'], capture_output=True, text=True)
                 if result.returncode != 0:
                     print(f"   ❌ Could not list windows: {result.stderr}")
-                    time.sleep(2)
+                    time.sleep(0.5)  # Faster retry
                     continue
                 
                 # Find windows by PID first, then by name
@@ -492,7 +501,7 @@ class UnifiedMultiScreenClient:
                 
                 if not windows_found:
                     print(f"   No Multi-Screen Client windows found yet...")
-                    time.sleep(2)
+                    time.sleep(0.5)  # Faster retry
                     continue
                 
                 # Move the first window found
@@ -537,9 +546,9 @@ class UnifiedMultiScreenClient:
                     return
                 else:
                     print(f"   ❌ Failed to move window: {move_result.stderr}")
-                    time.sleep(2)
+                    time.sleep(0.5)  # Faster retry
             
-            print(f"   ❌ Could not position windows after 3 attempts")
+            print(f"   ❌ Could not position windows after 5 attempts")
             
         except Exception as e:
             print(f"   ❌ Error positioning window: {e}")
@@ -1104,11 +1113,17 @@ Note: Make sure the client window has focus for hotkeys to work.
                     group_name = data.get('group_name', 'unknown')
                     stream_assignment = data.get('stream_assignment', 'unknown')
                     
+                    # Store monitor position from server assignment
+                    self.assigned_monitor_x = data.get('monitor_x')
+                    self.assigned_monitor_y = data.get('monitor_y')
+                    screen_number = data.get('screen_number')
+                    
                     print(f"\n📋 ASSIGNMENT DETAILS:")
                     print(f"   Group: {group_name}")
                     print(f"   Stream Assignment: {stream_assignment}")
                     print(f"   Assignment Type: {data.get('assignment_status', 'unknown')}")
                     print(f"   Screen Number: {data.get('screen_number', 'N/A')}")
+                    print(f"   Monitor Position: ({self.assigned_monitor_x}, {self.assigned_monitor_y})")
                     print(f"   Stream URL (original): {original_stream_url}")
                     print(f"   Stream URL (fixed): {self.current_stream_url}")
                     print(f"   Stream Version: {self.current_stream_version}")
@@ -1120,6 +1135,17 @@ Note: Make sure the client window has focus for hotkeys to work.
                     print(f"\n🔍 RUNNING STREAM ASSIGNMENT VALIDATION...")
                     validation_result = self._validate_stream_assignment(data)
                     print(f"   Validation Result: {'PASSED' if validation_result else 'FAILED'}")
+                    
+                    # Set monitor assignment for immediate positioning
+                    if screen_number is not None and self.assigned_monitor_x is not None and self.assigned_monitor_y is not None:
+                        self.current_monitor = screen_number
+                        print(f"   🎯 Set monitor assignment: screen {screen_number} at ({self.assigned_monitor_x}, {self.assigned_monitor_y})")
+                    elif screen_number is not None:
+                        # Fallback to default monitor positions
+                        if screen_number < len(self.monitor_positions):
+                            self.current_monitor = screen_number
+                            self.assigned_monitor_x, self.assigned_monitor_y = self.monitor_positions[screen_number]
+                            print(f"   🎯 Set monitor assignment: screen {screen_number} at default position ({self.assigned_monitor_x}, {self.assigned_monitor_y})")
                     
                     print(f"\n✅ ASSIGNMENT COMPLETE!")
                     print(f"   Group: {group_name}")
@@ -1520,10 +1546,12 @@ Note: Make sure the client window has focus for hotkeys to work.
             print(f"   Status: Playing with SEI processing")
             self.logger.info(f"C++ Player started for SEI stream")
             
-            # Position window on the correct monitor after a delay (multiple attempts)
-            threading.Timer(2.0, self._position_window_on_monitor).start()   # First attempt
-            threading.Timer(5.0, self._position_window_on_monitor).start()   # Second attempt
-            threading.Timer(10.0, self._position_window_on_monitor).start()  # Third attempt
+            # Position window on the correct monitor immediately and aggressively
+            threading.Timer(0.5, self._position_window_on_monitor).start()   # Immediate attempt
+            threading.Timer(1.0, self._position_window_on_monitor).start()   # First retry
+            threading.Timer(2.0, self._position_window_on_monitor).start()   # Second retry
+            threading.Timer(3.0, self._position_window_on_monitor).start()   # Third retry
+            threading.Timer(5.0, self._position_window_on_monitor).start()   # Final retry
             
             # Start fallback monitoring after initial positioning
             threading.Timer(15.0, self._start_fallback_monitor).start()
@@ -1741,15 +1769,18 @@ Note: Make sure the client window has focus for hotkeys to work.
             self.logger.info(f"ffplay started for standard stream")
             
             # Wait a bit for window to appear, then force map/raise it
-            time.sleep(3)
+            time.sleep(1)
             self._ensure_window_visible()
             
-            # Position window on the correct monitor after ensuring visibility
-            # Only try once, and only if needed
-            threading.Timer(5.0, self._position_window_on_monitor).start()
+            # Position window on the correct monitor immediately and aggressively
+            threading.Timer(0.5, self._position_window_on_monitor).start()   # Immediate attempt
+            threading.Timer(1.0, self._position_window_on_monitor).start()   # First retry
+            threading.Timer(2.0, self._position_window_on_monitor).start()   # Second retry
+            threading.Timer(3.0, self._position_window_on_monitor).start()   # Third retry
+            threading.Timer(5.0, self._position_window_on_monitor).start()   # Final retry
             
-            # Force fullscreen immediately after a short delay
-            threading.Timer(8.0, self._force_immediate_fullscreen).start()
+            # Force fullscreen immediately after positioning
+            threading.Timer(2.0, self._force_immediate_fullscreen).start()
             
             # Start fallback monitoring after initial positioning
             threading.Timer(15.0, self._start_fallback_monitor).start()

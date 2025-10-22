@@ -3,6 +3,7 @@ MongoDB client utilities for backend persistence.
 """
 
 import os
+import time
 from typing import Optional, Dict, Any, List
 
 try:
@@ -59,6 +60,9 @@ def ensure_indexes():
         db["clients"].create_index("client_id", unique=True)
         db["groups"].create_index("id", unique=True)
         db["groups"].create_index("name", unique=True)
+        db["client_assignments"].create_index("hostname", unique=True)
+        db["client_assignments"].create_index("client_id")
+        db["client_assignments"].create_index("group_id")
     except Exception:
         # Non-fatal
         pass
@@ -92,5 +96,91 @@ def find_all(collection: str) -> List[Dict[str, Any]]:
         return list(db[collection].find({}, {"_id": 0}))  # exclude ObjectId
     except Exception:
         return []
+
+
+def find_one(collection: str, query: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Find a single document in a collection"""
+    db = get_mongo_db()
+    if db is None:
+        return None
+    try:
+        return db[collection].find_one(query, {"_id": 0})
+    except Exception:
+        return None
+
+
+def save_client_assignment(client_id: str, hostname: str, group_id: str, screen_number: int, group_name: str, monitor_x: int = None, monitor_y: int = None) -> bool:
+    """Save persistent client assignment to database"""
+    db = get_mongo_db()
+    if db is None:
+        return False
+    
+    try:
+        assignment = {
+            "client_id": client_id,
+            "hostname": hostname,
+            "group_id": group_id,
+            "screen_number": screen_number,
+            "group_name": group_name,
+            "monitor_x": monitor_x,
+            "monitor_y": monitor_y,
+            "assigned_at": int(time.time()),
+            "last_seen": int(time.time())
+        }
+        
+        # Upsert the assignment
+        db["client_assignments"].update_one(
+            {"hostname": hostname},
+            {"$set": assignment},
+            upsert=True
+        )
+        return True
+    except Exception as e:
+        print(f"Error saving client assignment: {e}")
+        return False
+
+
+def get_client_assignment(hostname: str) -> Optional[Dict[str, Any]]:
+    """Get persistent client assignment by hostname"""
+    db = get_mongo_db()
+    if db is None:
+        return None
+    
+    try:
+        return db["client_assignments"].find_one({"hostname": hostname}, {"_id": 0})
+    except Exception as e:
+        print(f"Error getting client assignment: {e}")
+        return None
+
+
+def update_client_last_seen(hostname: str) -> bool:
+    """Update last seen timestamp for client assignment"""
+    db = get_mongo_db()
+    if db is None:
+        return False
+    
+    try:
+        db["client_assignments"].update_one(
+            {"hostname": hostname},
+            {"$set": {"last_seen": int(time.time())}}
+        )
+        return True
+    except Exception as e:
+        print(f"Error updating client last seen: {e}")
+        return False
+
+
+def remove_client_assignment(hostname: str) -> bool:
+    """Remove persistent client assignment"""
+    db = get_mongo_db()
+    if db is None:
+        return False
+    
+    try:
+        db["client_assignments"].delete_one({"hostname": hostname})
+        return True
+    except Exception as e:
+        print(f"Error removing client assignment: {e}")
+        return False
 
 

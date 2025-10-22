@@ -291,6 +291,75 @@ def register_client():
         existing_client = state.get_client(client_id) if hasattr(state, 'get_client') else state.clients.get(client_id)
         action = "updated" if existing_client else "registered"
         
+        # Check for persistent assignment first
+        from ..db.mongo import get_client_assignment, update_client_last_seen
+        
+        persistent_assignment = get_client_assignment(hostname)
+        if persistent_assignment:
+            logger.info(f"Found persistent assignment for {hostname}: group_id={persistent_assignment.get('group_id')}, screen_number={persistent_assignment.get('screen_number')}")
+            
+            # Update last seen timestamp
+            update_client_last_seen(hostname)
+            
+            # Apply persistent assignment
+            group_id = persistent_assignment.get("group_id")
+            group_name = persistent_assignment.get("group_name")
+            screen_number = persistent_assignment.get("screen_number")
+            monitor_x = persistent_assignment.get("monitor_x")
+            monitor_y = persistent_assignment.get("monitor_y")
+            
+            # Check if group still exists
+            from ..group_management import get_group_by_id
+            group = get_group_by_id(group_id)
+            if group:
+                logger.info(f"Group {group_id} exists, applying persistent assignment")
+                
+                # Create client data with persistent assignment
+                client_data = {
+                    "client_id": client_id,
+                    "hostname": hostname,
+                    "ip_address": ip_address,
+                    "display_name": display_name,
+                    "platform": platform,
+                    "registered_at": existing_client.get("registered_at", current_time) if existing_client else current_time,
+                    "last_seen": current_time,
+                    "status": "active",
+                    "group_id": group_id,
+                    "group_name": group_name,
+                    "screen_number": screen_number,
+                    "monitor_x": monitor_x,
+                    "monitor_y": monitor_y,
+                    "assignment_status": "screen_assigned" if screen_number is not None else "group_assigned",
+                    "assigned_at": current_time,
+                    "srt_ip": os.getenv("SRT_SERVER_IP", "127.0.0.1")
+                }
+                
+                # Save client with persistent assignment
+                if hasattr(state, 'add_client'):
+                    state.add_client(client_id, client_data)
+                elif hasattr(state, 'add_or_update_client'):
+                    state.add_or_update_client(client_id, client_data)
+                else:
+                    state.clients[client_id] = client_data
+                
+                logger.info(f"Client {client_id} auto-assigned to group {group_name} (screen {screen_number})")
+                
+                return jsonify({
+                    "success": True,
+                    "message": f"Client auto-assigned to group {group_name} (screen {screen_number})",
+                    "client_id": client_id,
+                    "auto_assignment": {
+                        "group_id": group_id,
+                        "group_name": group_name,
+                        "screen_number": screen_number,
+                        "assignment_status": client_data["assignment_status"]
+                    }
+                }), 200
+            else:
+                logger.warning(f"Group {group_id} no longer exists, removing persistent assignment")
+                from ..db.mongo import remove_client_assignment
+                remove_client_assignment(hostname)
+        
         # If client exists, preserve all existing data and just update heartbeat/status
         if existing_client:
             logger.info(f"Client {client_id} exists, preserving all existing data and updating heartbeat")
@@ -326,8 +395,6 @@ def register_client():
                     "stream_id": existing_client.get("stream_id")
                 }
             }), 200
-        
-            # No auto-assignment - clients must be manually assigned
         
         # Create or update client record
         client_data = {
