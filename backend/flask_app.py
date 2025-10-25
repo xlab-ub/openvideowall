@@ -91,9 +91,7 @@ def create_app():
     
     # Configure session
     app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
-    app.config['SESSION_TYPE'] = 'filesystem'
-    app.config['SESSION_FILE_DIR'] = os.path.join(os.path.dirname(__file__), 'sessions')
-    app.config['SESSION_FILE_THRESHOLD'] = 500
+    app.config['SESSION_TYPE'] = 'mongodb'
     app.config['SESSION_PERMANENT'] = False
     app.config['SESSION_USE_SIGNER'] = True
     app.config['SESSION_KEY_PREFIX'] = 'openvideowall:'
@@ -101,6 +99,25 @@ def create_app():
     app.config['SESSION_COOKIE_HTTPONLY'] = True
     app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    
+    # Get MongoDB client for session storage
+    try:
+        from db.mongo import get_mongo_client
+    except ImportError:
+        try:
+            from .db.mongo import get_mongo_client
+        except ImportError:
+            pass
+    
+    # Configure MongoDB session storage
+    mongo_client = get_mongo_client()
+    if mongo_client is not None:
+        app.config['SESSION_MONGODB'] = mongo_client
+        app.config['SESSION_MONGODB_DB'] = os.environ.get('OPENVIDEOWALL_MONGO_DB', 'openvideowall')
+        app.config['SESSION_MONGODB_COLLECT'] = 'flask_sessions'
+        logger.info("Session storage configured to use MongoDB")
+    else:
+        logger.warning("MongoDB not available, sessions will not persist")
     
     # Initialize session
     Session(app)
