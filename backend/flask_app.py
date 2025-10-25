@@ -10,6 +10,7 @@ import threading
 import logging
 from flask import Flask, jsonify  # type: ignore
 from flask_cors import CORS  # type: ignore
+from flask_session import Session  # type: ignore
 try:
     from dotenv import load_dotenv  # type: ignore
     load_dotenv()
@@ -24,6 +25,7 @@ try:
     from .blueprints.client_management import client_bp  # type: ignore
     from .blueprints.streaming import multi_stream_bp, split_stream_bp  # type: ignore
     from .blueprints.docker_management import docker_bp  # type: ignore
+    from .blueprints.auth_management import auth_bp  # type: ignore
 except ImportError:
     # Fallback for direct execution
     from app_config import AppConfig  # type: ignore
@@ -32,6 +34,7 @@ except ImportError:
     from blueprints.client_management import client_bp  # type: ignore
     from blueprints.streaming import multi_stream_bp, split_stream_bp  # type: ignore
     from blueprints.docker_management import docker_bp  # type: ignore
+    from blueprints.auth_management import auth_bp  # type: ignore
 
 
 def clear_all_logs():
@@ -85,6 +88,22 @@ except ImportError:
 def create_app():
     """Create and configure Flask application"""
     app = Flask(__name__)
+    
+    # Configure session
+    app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-change-in-production')
+    app.config['SESSION_TYPE'] = 'filesystem'
+    app.config['SESSION_FILE_DIR'] = os.path.join(os.path.dirname(__file__), 'sessions')
+    app.config['SESSION_FILE_THRESHOLD'] = 500
+    app.config['SESSION_PERMANENT'] = False
+    app.config['SESSION_USE_SIGNER'] = True
+    app.config['SESSION_KEY_PREFIX'] = 'openvideowall:'
+    app.config['SESSION_COOKIE_NAME'] = 'openvideowall_session'
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    
+    # Initialize session
+    Session(app)
     
     # Enable CORS for all routes
     CORS(app, resources={
@@ -152,12 +171,26 @@ def create_app():
     # Create uploads directory
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     
+    # Initialize default admin user
+    try:
+        try:
+            from .blueprints.auth_management.auth_service import AuthService  # type: ignore
+        except ImportError:
+            from blueprints.auth_management.auth_service import AuthService  # type: ignore
+        
+        auth_service = AuthService()
+        auth_service.initialize_default_admin()
+        logger.info("Authentication system initialized")
+    except Exception as auth_e:
+        logger.warning(f"Authentication initialization failed: {auth_e}")
+    
     # Register blueprints
     app.register_blueprint(group_bp)
     app.register_blueprint(video_bp)
     app.register_blueprint(client_bp, url_prefix='/api/clients')
     app.register_blueprint(multi_stream_bp, url_prefix='/api/streaming')
     app.register_blueprint(split_stream_bp, url_prefix='/api/streaming')
+    app.register_blueprint(auth_bp)
     
     # Add backward compatibility routes (without prefix) with unique names
     app.register_blueprint(multi_stream_bp, url_prefix='', name='multi_stream_legacy')

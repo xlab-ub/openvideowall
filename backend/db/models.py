@@ -8,6 +8,39 @@ from sqlalchemy import Column, String, Float, Integer, Text, Boolean  # type: ig
 from .base import Base
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    # Primary identifier
+    username = Column(String(255), primary_key=True, index=True)
+    
+    # Authentication
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(50), nullable=False)  # 'admin' or 'student-assistant'
+    
+    # Timestamps
+    created_at = Column(Float, nullable=True)
+    last_login = Column(Float, nullable=True)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "username": self.username,
+            "role": self.role,
+            "created_at": self.created_at,
+            "last_login": self.last_login,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "User":
+        return cls(
+            username=data.get("username"),
+            password_hash=data.get("password_hash"),
+            role=data.get("role"),
+            created_at=data.get("created_at"),
+            last_login=data.get("last_login"),
+        )
+
+
 class Client(Base):
     __tablename__ = "clients"
 

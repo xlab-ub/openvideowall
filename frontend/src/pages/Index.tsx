@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Monitor, Users, Video } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Monitor, Users, Video, LogOut } from "lucide-react";
+import { useAuth } from '@/contexts/AuthContext';
 import StreamsTab from "@/components/StreamsTab/StreamsTab";
 import ClientsTab from "@/components/ClientsTab";
 import VideoFilesTab from "@/components/VideoFilesTab";
@@ -9,6 +12,8 @@ const STORAGE_KEY = 'activeTab';
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState<string>('streams');
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   const getInitialTab = (): string => {
     try {
@@ -36,12 +41,37 @@ const Index = () => {
     }
   };
 
+  const handleLogout = async () => {
+    await logout();
+    navigate('/signin');
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Streaming Management System</h1>
-          <p className="text-gray-600">Manage your streaming groups, clients, and video content</p>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">Streaming Management System</h1>
+              <p className="text-gray-600">Manage your streaming groups, clients, and video content</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <p className="text-sm text-gray-600">Signed in as</p>
+                <p className="font-medium text-gray-900">{user?.username}</p>
+                <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleLogout}
+                className="flex items-center gap-2"
+              >
+                <LogOut className="w-4 h-4" />
+                Logout
+              </Button>
+            </div>
+          </div>
         </div>
 
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">

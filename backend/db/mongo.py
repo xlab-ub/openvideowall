@@ -64,6 +64,7 @@ def ensure_indexes():
         db["client_assignments"].create_index("client_id")
         db["client_assignments"].create_index("group_id")
         db["group_stream_ids"].create_index("group_id", unique=True)
+        db["users"].create_index("username", unique=True)
     except Exception:
         # Non-fatal
         pass
